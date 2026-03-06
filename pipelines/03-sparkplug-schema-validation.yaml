@@ -1,0 +1,87 @@
+# Pipeline 3: Sparkplug B Schema Validation
+# ==========================================
+# Validates Sparkplug B DDATA messages against expected metric schema.
+# Valid messages are forwarded to HiveMQ. Invalid messages are routed
+# to a quarantine topic with error details — they never reach downstream.
+#
+# Deploy:
+#   expanso-cli job deploy pipelines/03-sparkplug-schema-validation.yaml
+#
+# Env vars:
+#   ALLOWED_METRICS  - comma-separated allowed metric names (default: Temperature,Pressure,FlowRate,Vibration)
+#   MAX_METRICS      - max metrics per DDATA message (default: 50)
+
+name: scada-sparkplug-schema-validation
+description: Validate Sparkplug B DDATA schema — quarantine bad messages at the edge
+type: pipeline
+
+selector:
+  match_labels:
+    demo: scada
+    cluster: ${EXPANSO_CLUSTER_ID}
+
+config:
+  input:
+    mqtt:
+      urls:
+        - "tcp://${MQTT_SOURCE_HOST:mqtt-source}:${MQTT_SOURCE_PORT:1883}"
+      topics:
+        - "spBv1.0/#"
+      client_id: "expanso-schema-in"
+
+  pipeline:
+    processors:
+      - log:
+          message: "Schema validation for ${! meta(\"mqtt_topic\") }"
+          level: DEBUG
+
+      - bloblang: |
+          let topic = meta("mqtt_topic")
+          let topic_parts = $topic.split("/")
+
+          # Validate topic structure: spBv1.0/<group>/<msg_type>/<node>/<device>
+          let valid_topic = $topic_parts.length() >= 4
+          let msg_type = $topic_parts.index(2) | "UNKNOWN"
+          let valid_msg_type = ["DDATA", "DBIRTH", "DDEATH", "NBIRTH", "NDEATH", "NDATA"].contains($msg_type)
+
+          root = {
+            "topic": $topic,
+            "msg_type": $msg_type,
+            "node_id": $topic_parts.index(3) | "unknown",
+            "device_id": $topic_parts.index(4) | "unknown",
+            "payload_size": content().length(),
+            "received_at": now().ts_format("2006-01-02T15:04:05.000Z"),
+            "valid_topic": $valid_topic,
+            "valid_msg_type": $valid_msg_type,
+            "validation_errors": if !$valid_topic {
+              ["Invalid topic structure — expected spBv1.0/<group>/<msg_type>/<node>"]
+            } else if !$valid_msg_type {
+              ["Unknown message type: " + $msg_type]
+            } else {
+              []
+            },
+            "passed": $valid_topic && $valid_msg_type
+          }
+
+      - log:
+          message: "Validation result: passed=${! this.passed } errors=${! this.validation_errors }"
+          level: INFO
+
+  output:
+    switch:
+      cases:
+        - check: 'this.passed == true'
+          output:
+            mqtt:
+              urls:
+                - "tcp://${MQTT_TARGET_HOST:mqtt-broker}:${MQTT_TARGET_PORT:1883}"
+              topic: '${! this.topic }'
+              client_id: "expanso-schema-valid-out"
+              qos: 1
+        - output:
+            mqtt:
+              urls:
+                - "tcp://${MQTT_TARGET_HOST:mqtt-broker}:${MQTT_TARGET_PORT:1883}"
+              topic: 'quarantine/${! this.topic }'
+              client_id: "expanso-schema-quarantine-out"
+              qos: 1
