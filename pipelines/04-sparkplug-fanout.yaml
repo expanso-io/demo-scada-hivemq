@@ -1,0 +1,79 @@
+# Pipeline 4: Sparkplug B Fan-out
+# ================================
+# Receives Sparkplug B messages and fans out to multiple destinations:
+#   1. HiveMQ broker (primary — real-time consumers)
+#   2. Archive topic (long-term storage / audit trail)
+#   3. Metrics aggregation topic (for dashboards / analytics)
+#
+# Deploy:
+#   expanso-cli job deploy pipelines/04-sparkplug-fanout.yaml
+#
+# Env vars:
+#   ARCHIVE_TOPIC    - archive destination topic (default: archive/spBv1.0)
+#   METRICS_TOPIC    - metrics aggregation topic (default: metrics/spBv1.0)
+
+name: scada-sparkplug-fanout
+description: Fan-out Sparkplug B messages to HiveMQ + archive + metrics aggregation simultaneously
+type: pipeline
+
+selector:
+  match_labels:
+    demo: scada
+    cluster: ${EXPANSO_CLUSTER_ID}
+
+config:
+  input:
+    mqtt:
+      urls:
+        - "tcp://${MQTT_SOURCE_HOST:mqtt-source}:${MQTT_SOURCE_PORT:1883}"
+      topics:
+        - "spBv1.0/#"
+      client_id: "expanso-fanout-in"
+
+  pipeline:
+    processors:
+      - log:
+          message: "Fan-out for ${! meta(\"mqtt_topic\") }"
+          level: DEBUG
+
+      - bloblang: |
+          root = {
+            "topic": meta("mqtt_topic"),
+            "payload_size": content().length(),
+            "node_id": meta("mqtt_topic").split("/").index(3) | "unknown",
+            "device_id": meta("mqtt_topic").split("/").index(4) | "unknown",
+            "fanout_at": now().ts_format("2006-01-02T15:04:05.000Z"),
+            "destinations": ["hivemq-primary", "archive", "metrics"]
+          }
+
+      - log:
+          message: "Fanning out to ${! this.destinations.length() } destinations"
+          level: INFO
+
+  output:
+    broker:
+      pattern: fan_out
+      outputs:
+        # 1. Primary HiveMQ — real-time consumers
+        - mqtt:
+            urls:
+              - "tcp://${MQTT_TARGET_HOST:mqtt-broker}:${MQTT_TARGET_PORT:1883}"
+            topic: '${! this.topic }'
+            client_id: "expanso-fanout-primary"
+            qos: 1
+
+        # 2. Archive topic — long-term storage / compliance
+        - mqtt:
+            urls:
+              - "tcp://${MQTT_TARGET_HOST:mqtt-broker}:${MQTT_TARGET_PORT:1883}"
+            topic: '${ARCHIVE_TOPIC:archive}/spBv1.0/${! this.node_id }/${! this.device_id }'
+            client_id: "expanso-fanout-archive"
+            qos: 1
+
+        # 3. Metrics aggregation topic — dashboards / analytics
+        - mqtt:
+            urls:
+              - "tcp://${MQTT_TARGET_HOST:mqtt-broker}:${MQTT_TARGET_PORT:1883}"
+            topic: '${METRICS_TOPIC:metrics}/spBv1.0/${! this.node_id }/${! this.device_id }'
+            client_id: "expanso-fanout-metrics"
+            qos: 1
