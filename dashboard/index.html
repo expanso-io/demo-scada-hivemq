@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SCADA → Expanso Edge → HiveMQ Demo</title>
+  <style>
+    :root {
+      --bg: #09121c;
+      --panel: #102334;
+      --ink: #d8e6f3;
+      --muted: #89a2b8;
+      --good: #2ecc71;
+      --bad: #e74c3c;
+      --warn: #f1c40f;
+      --line: #224159;
+      --accent: #43b7ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #13334e, var(--bg) 35%), var(--bg);
+      color: var(--ink);
+    }
+    .wrap { max-width: 1300px; margin: 20px auto; padding: 0 14px; }
+    h1 { margin: 4px 0 14px; font-size: 26px; }
+    .flow {
+      background: linear-gradient(135deg, #0f2f48, #0b1c2c);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .nodes { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+    .node {
+      flex: 1;
+      min-width: 110px;
+      text-align: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.22);
+      font-weight: 700;
+    }
+    .arrow {
+      height: 8px;
+      flex: 0.8;
+      border-radius: 4px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      background-size: 180px 8px;
+      animation: pulse 1.6s linear infinite;
+    }
+    @keyframes pulse {
+      from { background-position: -180px 0; }
+      to { background-position: 180px 0; }
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      min-height: 220px;
+    }
+    .panel h2 { margin: 0 0 10px; font-size: 17px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; font-size: 13px; }
+    .stat-val { font-weight: 700; }
+    .toggles { display: grid; gap: 7px; margin-bottom: 10px; }
+    button {
+      width: 100%;
+      text-align: left;
+      border-radius: 8px;
+      border: 1px solid #36617d;
+      color: #eef7ff;
+      background: #163b54;
+      padding: 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button.on { background: #1f6f4e; border-color: #3aa66f; }
+    .chart {
+      height: 80px;
+      border: 1px solid #2c4c64;
+      border-radius: 8px;
+      padding: 8px;
+      display: flex;
+      align-items: end;
+      gap: 8px;
+      background: #0f2335;
+    }
+    .bar { width: 48%; border-radius: 6px 6px 0 0; }
+    .bar.in { background: #528fbe; }
+    .bar.out { background: #f0b429; }
+    .msg-box {
+      margin-top: 12px;
+      background: #0f2436;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: auto;
+      max-height: 330px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 6px; border-bottom: 1px solid #1e425a; text-align: left; white-space: nowrap; }
+    .st-passed { color: var(--good); }
+    .st-dropped, .st-invalid { color: var(--bad); }
+    .st-compressed { color: var(--warn); }
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .nodes { flex-direction: column; }
+      .arrow { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>SCADA → Expanso Edge → HiveMQ</h1>
+
+    <div class="flow">
+      <div class="nodes">
+        <div class="node">SCADA Sim<br><span class="muted">OPC-UA</span></div>
+        <div class="arrow"></div>
+        
+        <div class="arrow"></div>
+        <div class="node">Expanso Edge<br><span class="muted">Policy + Transform</span></div>
+        <div class="arrow"></div>
+        <div class="node">HiveMQ<br><span class="muted">Final Broker</span></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>(A) Default Flow</h2>
+        <div class="muted">Raw Sparkplug stream visibility (no filtering intent)</div>
+        <div class="stats" id="panel-a-stats"></div>
+      </div>
+
+      <div class="panel">
+        <h2>(B) Expanso In-Line</h2>
+        <div class="toggles" id="toggles"></div>
+        <div class="stats" id="panel-b-stats"></div>
+        <div class="chart">
+          <div class="bar in" id="bar-in" style="height: 20%"></div>
+          <div class="bar out" id="bar-out" style="height: 20%"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>(C) Expanso Parallel</h2>
+        <div class="muted">Parallel path view (direct SCADA policy simulation)</div>
+        <div class="stats" id="panel-c-stats"></div>
+      </div>
+    </div>
+
+    <div class="msg-box">
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th><th>Value</th><th>Type</th><th>Timestamp</th><th>Quality</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="messages"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const state = { deadband: false, schema: false, compression: false, fanout: false };
+    const featureOrder = ["deadband", "schema", "compression", "fanout"];
+
+    function fmt(v) {
+      if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
+      return String(v);
+    }
+
+    function makeStats(target, rows) {
+      target.innerHTML = rows.map(([k, v]) => `<div>${k}</div><div class="stat-val">${fmt(v)}</div>`).join("");
+    }
+
+    function renderToggles() {
+      const wrap = document.getElementById("toggles");
+      wrap.innerHTML = "";
+      featureOrder.forEach((f) => {
+        const b = document.createElement("button");
+        b.textContent = `${f.toUpperCase()} : ${state[f] ? "ON" : "OFF"}`;
+        b.className = state[f] ? "on" : "";
+        b.onclick = async () => {
+          state[f] = !state[f];
+          await fetch("/api/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(state)
+          });
+          await fetch("/api-parallel/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(state)
+          });
+          renderToggles();
+        };
+        wrap.appendChild(b);
+      });
+    }
+
+    function renderMessages(messages) {
+      const tbody = document.getElementById("messages");
+      tbody.innerHTML = messages.map((m) => {
+        const st = `st-${m.status}`;
+        return `<tr>
+          <td>${m.metric}</td>
+          <td>${fmt(m.value)}</td>
+          <td>${m.datatype}</td>
+          <td>${m.timestamp}</td>
+          <td>${m.quality}</td>
+          <td class="${st}">${m.status}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    async function poll() {
+      const [metricsResp, parallelResp] = await Promise.all([
+        fetch("/api/metrics"),
+        fetch("/api-parallel/metrics")
+      ]);
+      const metrics = await metricsResp.json();
+      const parallelMetrics = await parallelResp.json();
+
+      Object.assign(state, metrics.current_features_enabled || {});
+      renderToggles();
+
+      makeStats(document.getElementById("panel-a-stats"), [
+        ["Messages In", metrics.messages_in],
+        ["Bytes In", metrics.bytes_in],
+        ["Messages Dropped", metrics.messages_dropped],
+        ["Validation Failures", metrics.validation_failures],
+        ["Rate In (msg/s)", metrics.messages_in_rate || 0],
+        ["Rate Out (msg/s)", metrics.messages_out_rate || 0],
+      ]);
+
+      makeStats(document.getElementById("panel-b-stats"), [
+        ["Messages Out", metrics.messages_out],
+        ["Bytes Out", metrics.bytes_out],
+        ["Saved %", `${metrics.bytes_saved_pct}%`],
+        ["Deadband", state.deadband],
+        ["Schema", state.schema],
+        ["Compression", state.compression],
+      ]);
+
+      makeStats(document.getElementById("panel-c-stats"), [
+        ["Parallel In", parallelMetrics.messages_in],
+        ["Parallel Out", parallelMetrics.messages_out],
+        ["Fan-Out", parallelMetrics.current_features_enabled?.fanout ?? false],
+        ["Archive Topic", (parallelMetrics.current_features_enabled?.fanout ?? false) ? "ACTIVE" : "OFF"],
+        ["Broker", "HiveMQ websocket :8000"],
+        ["Topic", "parallel/spBv1.0 -> spBv1.0"],
+      ]);
+
+      const inB = Math.max(1, metrics.bytes_in || 1);
+      const outB = Math.max(1, metrics.bytes_out || 1);
+      const max = Math.max(inB, outB);
+      document.getElementById("bar-in").style.height = `${Math.round((inB / max) * 100)}%`;
+      document.getElementById("bar-out").style.height = `${Math.round((outB / max) * 100)}%`;
+
+      const msgResp = await fetch("/api/messages");
+      const msgData = await msgResp.json();
+      renderMessages(msgData.messages || []);
+    }
+
+    renderToggles();
+    poll().catch(() => {});
+    setInterval(() => poll().catch(() => {}), 2000);
+  </script>
+</body>
+</html>
