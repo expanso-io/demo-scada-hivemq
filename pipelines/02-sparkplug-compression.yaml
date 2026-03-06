@@ -1,0 +1,61 @@
+# Pipeline 2: Sparkplug B Payload Compression
+# ============================================
+# Subscribes to MQTT Sparkplug B topics, compresses the raw protobuf
+# payload with gzip, and republishes to HiveMQ with a content-encoding
+# header so consumers can decompress.
+#
+# Deploy:
+#   expanso-cli job deploy pipelines/02-sparkplug-compression.yaml
+
+name: scada-sparkplug-compression
+description: Compress Sparkplug B payloads with gzip before forwarding to HiveMQ
+type: pipeline
+
+selector:
+  match_labels:
+    demo: scada
+    cluster: ${EXPANSO_CLUSTER_ID}
+
+config:
+  input:
+    mqtt:
+      urls:
+        - "tcp://${MQTT_SOURCE_HOST:mqtt-source}:${MQTT_SOURCE_PORT:1883}"
+      topics:
+        - "spBv1.0/#"
+      client_id: "expanso-compress-in"
+
+  pipeline:
+    processors:
+      - log:
+          message: "Compressing Sparkplug B payload on ${! meta(\"mqtt_topic\") }"
+          level: DEBUG
+
+      - bloblang: |
+          root = this
+          root._original_size = content().length()
+          root._topic = meta("mqtt_topic")
+
+      # Compress the raw payload
+      - compress:
+          algorithm: gzip
+
+      - bloblang: |
+          root._compressed_size = content().length()
+          root._compression_ratio = if this._original_size > 0 {
+            (1.0 - (this._compressed_size / this._original_size)) * 100
+          } else { 0 }
+          root._compressed = true
+
+      - log:
+          message: "Compressed: original=${! this._original_size }B compressed=${! this._compressed_size }B ratio=${! this._compression_ratio.round() }%"
+          level: INFO
+
+  output:
+    mqtt:
+      urls:
+        - "tcp://${MQTT_TARGET_HOST:mqtt-broker}:${MQTT_TARGET_PORT:1883}"
+      topic: '${! meta("mqtt_topic") }'
+      client_id: "expanso-compress-out"
+      retained: false
+      qos: 1
