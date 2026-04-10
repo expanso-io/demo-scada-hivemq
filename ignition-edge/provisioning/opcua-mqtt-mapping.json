@@ -1,0 +1,14 @@
+{
+  "opcua_endpoint": "opc.tcp://scada-sim:4840/freeopcua/server/",
+  "namespace": "http://expanso.demo/scada",
+  "nodes": [
+    {"path": "SensorData/Temperature", "sparkplug_metric": "Temperature", "datatype": "float"},
+    {"path": "SensorData/Pressure", "sparkplug_metric": "Pressure", "datatype": "float"},
+    {"path": "SensorData/DoorSensor", "sparkplug_metric": "DoorSensor", "datatype": "int"}
+  ],
+  "mqtt": {
+    "host": "mqtt-source",
+    "port": 1883,
+    "topic": "spBv1.0/Expanso/DDATA/edge1/sensors"
+  }
+}
