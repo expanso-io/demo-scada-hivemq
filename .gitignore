@@ -1,1 +1,33 @@
+# Credentials — holds EXPANSO_EDGE_BOOTSTRAP_TOKEN and the cluster endpoint
 .env
+.env.local
+.env.*
+!.env.example
+
+# direnv shim, empty and machine-local
+.envrc
+
+# Runtime state
+.runtime/
+.expanso-edge/
+.edge-identity/
+data/
+*.db
+*.sqlite3
+*.log
+
+# Broker + simulator volumes mounted at run time
+hivemq/data/
+hivemq/log/
+mqtt-source/data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store

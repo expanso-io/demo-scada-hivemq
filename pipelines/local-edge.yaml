@@ -1,0 +1,82 @@
+# Local Expanso Edge pipeline for demo
+# Deployed via: EXPANSO_CLI_ENDPOINT=http://expanso-edge:9010 expanso-cli job deploy local-edge.yaml
+#
+# Subscribes to Sparkplug B topics on mqtt-source, processes through
+# validation, and publishes to mqtt-broker (HiveMQ) with stats.
+
+name: scada-local-demo
+description: Local SCADA demo pipeline — validate and forward Sparkplug B messages
+type: pipeline
+
+config:
+  input:
+    mqtt:
+      urls:
+        - "tcp://mqtt-source:1883"
+      topics:
+        - "spBv1.0/#"
+      client_id: "expanso-edge-local"
+
+  pipeline:
+    processors:
+      # Parse incoming message and annotate with metadata
+      - bloblang: |
+          let topic = meta("mqtt_topic")
+          let parts = $topic.split("/")
+          let raw = content().string()
+          let raw_size = content().length()
+
+          root = {
+            "topic": $topic,
+            "group": $parts.index(1) | "unknown",
+            "msg_type": $parts.index(2) | "unknown",
+            "node_id": $parts.index(3) | "unknown",
+            "device_id": $parts.index(4) | "unknown",
+            "payload": $raw,
+            "payload_size": $raw_size,
+            "received_at": now().ts_format("2006-01-02T15:04:05.000Z"),
+            "validated": true,
+            "validation_errors": [],
+            "original_size": $raw_size,
+            "output_size": $raw_size
+          }
+
+      # Schema validation: check topic structure
+      - bloblang: |
+          let valid_types = ["DDATA", "DBIRTH", "DDEATH", "NBIRTH", "NDEATH", "NDATA"]
+          let valid_type = $valid_types.contains(this.msg_type)
+          let valid_topic = this.topic.split("/").length() >= 4
+
+          root = this
+          root.validated = $valid_topic && $valid_type
+          root.validation_errors = if !$valid_topic {
+            ["Invalid topic structure"]
+          } else if !$valid_type {
+            ["Unknown message type: " + this.msg_type]
+          } else {
+            []
+          }
+
+      - log:
+          message: "Processed: topic=${! this.topic } valid=${! this.validated } node=${! this.node_id }"
+          level: INFO
+
+  output:
+    broker:
+      pattern: fan_out
+      outputs:
+        # Primary: forward to HiveMQ
+        - mqtt:
+            urls:
+              - "tcp://mqtt-broker:1883"
+            topic: '${! this.topic }'
+            client_id: "expanso-edge-out-primary"
+            qos: 1
+
+        # Stats: publish processing stats for dashboard
+        - mqtt:
+            urls:
+              - "tcp://mqtt-broker:1883"
+            topic: 'expanso/stats/${! this.node_id }/${! this.device_id }'
+            client_id: "expanso-edge-out-stats"
+            qos: 0

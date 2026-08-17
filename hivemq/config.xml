@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<hivemq>
+  <listeners>
+    <!-- Standard MQTT -->
+    <tcp-listener>
+      <port>1883</port>
+      <bind-address>0.0.0.0</bind-address>
+    </tcp-listener>
+    <!-- WebSocket for browser dashboard -->
+    <websocket-listener>
+      <port>8000</port>
+      <bind-address>0.0.0.0</bind-address>
+      <path>/mqtt</path>
+      <subprotocols>
+        <subprotocol>mqtt</subprotocol>
+      </subprotocols>
+    </websocket-listener>
+  </listeners>
+</hivemq>

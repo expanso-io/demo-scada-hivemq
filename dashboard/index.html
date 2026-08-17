@@ -1,275 +1,1312 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SCADA → Expanso Edge → HiveMQ Demo</title>
-  <style>
-    :root {
-      --bg: #09121c;
-      --panel: #102334;
-      --ink: #d8e6f3;
-      --muted: #89a2b8;
-      --good: #2ecc71;
-      --bad: #e74c3c;
-      --warn: #f1c40f;
-      --line: #224159;
-      --accent: #43b7ff;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top left, #13334e, var(--bg) 35%), var(--bg);
-      color: var(--ink);
-    }
-    .wrap { max-width: 1300px; margin: 20px auto; padding: 0 14px; }
-    h1 { margin: 4px 0 14px; font-size: 26px; }
-    .flow {
-      background: linear-gradient(135deg, #0f2f48, #0b1c2c);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 14px;
-      margin-bottom: 14px;
-    }
-    .nodes { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
-    .node {
-      flex: 1;
-      min-width: 110px;
-      text-align: center;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 12px;
-      background: rgba(0, 0, 0, 0.22);
-      font-weight: 700;
-    }
-    .arrow {
-      height: 8px;
-      flex: 0.8;
-      border-radius: 4px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      background-size: 180px 8px;
-      animation: pulse 1.6s linear infinite;
-    }
-    @keyframes pulse {
-      from { background-position: -180px 0; }
-      to { background-position: 180px 0; }
-    }
-    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 12px;
-      min-height: 220px;
-    }
-    .panel h2 { margin: 0 0 10px; font-size: 17px; }
-    .muted { color: var(--muted); font-size: 12px; }
-    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; font-size: 13px; }
-    .stat-val { font-weight: 700; }
-    .toggles { display: grid; gap: 7px; margin-bottom: 10px; }
-    button {
-      width: 100%;
-      text-align: left;
-      border-radius: 8px;
-      border: 1px solid #36617d;
-      color: #eef7ff;
-      background: #163b54;
-      padding: 8px;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    button.on { background: #1f6f4e; border-color: #3aa66f; }
-    .chart {
-      height: 80px;
-      border: 1px solid #2c4c64;
-      border-radius: 8px;
-      padding: 8px;
-      display: flex;
-      align-items: end;
-      gap: 8px;
-      background: #0f2335;
-    }
-    .bar { width: 48%; border-radius: 6px 6px 0 0; }
-    .bar.in { background: #528fbe; }
-    .bar.out { background: #f0b429; }
-    .msg-box {
-      margin-top: 12px;
-      background: #0f2436;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      overflow: auto;
-      max-height: 330px;
-    }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { padding: 6px; border-bottom: 1px solid #1e425a; text-align: left; white-space: nowrap; }
-    .st-passed { color: var(--good); }
-    .st-dropped, .st-invalid { color: var(--bad); }
-    .st-compressed { color: var(--warn); }
-    @media (max-width: 980px) {
-      .grid { grid-template-columns: 1fr; }
-      .nodes { flex-direction: column; }
-      .arrow { width: 100%; }
-    }
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SCADA &rarr; Expanso Edge &rarr; HiveMQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#060e1a;--bg2:#0c1829;
+  --ink:#e8edf3;--sub:#a0b0c2;--dim:#6b7f94;--mute:#3a4f65;
+  --border:rgba(255,255,255,.12);--border-bright:rgba(255,255,255,.2);
+  --surface:rgba(255,255,255,.05);--surface2:rgba(255,255,255,.08);
+  --teal:#36d1c4;--teal-dim:rgba(54,209,196,.12);--teal-gl:rgba(54,209,196,.4);
+  --cyan:#5ac8fa;--cyan-dim:rgba(90,200,250,.2);
+  --amber:#f59e0b;--amber-dim:rgba(245,158,11,.12);
+  --good:#4ade80;--bad:#f87171;--warn:#fbbf24;
+  --wind:#60a5fa;--solar:#fbbf24;--batt:#34d399;--dg:#fb923c;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Barlow',system-ui,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;
+  background-image:
+    radial-gradient(ellipse at 35% 20%,rgba(54,209,196,.03) 0%,transparent 50%),
+    radial-gradient(ellipse at 75% 60%,rgba(245,158,11,.02) 0%,transparent 40%);
+}
+
+/* ── Header ── */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 40px;border-bottom:1px solid var(--border)}
+.hdr h1{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--sub)}
+.hdr h1 b{color:var(--teal)}
+.hdr .live{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--sub)}
+.hdr .dot{width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ── Hero text ── */
+.hero{padding:32px 40px 0;max-width:800px}
+.hero h2{font-size:28px;font-weight:800;line-height:1.2;letter-spacing:-.02em;margin-bottom:10px}
+.hero h2 em{font-style:italic;color:var(--teal)}
+.hero p{font-size:15px;color:var(--sub);line-height:1.65}
+
+/* ── Controls ── */
+.controls{padding:20px 40px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ctrl-label{font-family:'Barlow Condensed',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);font-weight:600;margin-right:4px}
+.tbtn{
+  display:flex;align-items:center;gap:6px;
+  padding:7px 14px;border:1.5px solid var(--border-bright);border-radius:6px;
+  background:transparent;color:var(--sub);
+  font-family:'Barlow',sans-serif;font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .25s;
+}
+.tbtn:hover{border-color:rgba(54,209,196,.4);color:var(--ink)}
+.tbtn.on{background:var(--teal-dim);border-color:rgba(54,209,196,.6);color:var(--teal)}
+.tbtn .ind{width:6px;height:6px;border-radius:50%;background:var(--dim);transition:all .25s}
+.tbtn.on .ind{background:var(--teal);box-shadow:0 0 6px var(--teal-gl)}
+
+/* ── Stage description ── */
+.stage{padding:16px 40px 0;max-width:720px}
+.stage-box{
+  padding:12px 18px;border-left:3px solid var(--teal);
+  background:var(--teal-dim);border-radius:0 8px 8px 0;
+}
+.stage-box .st{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:var(--teal);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.stage-box .sd{font-size:13px;color:var(--sub);line-height:1.55}
+
+/* ── Architecture SVG ── */
+.arch{padding:24px 40px 0;width:100%;overflow-x:auto}
+.arch svg{width:100%;height:auto;max-height:60vh;min-height:380px;display:block}
+
+/* Zone backgrounds */
+.zone-bg{fill:var(--surface);stroke:var(--border-bright);stroke-width:1;rx:10}
+.zone-bg.z-edge{fill:rgba(54,209,196,.03);stroke:var(--mute);stroke-dasharray:8 5;transition:all .6s}
+.zone-bg.z-ingest{fill:rgba(245,158,11,.02);stroke:var(--border-bright)}
+
+/* Zone labels */
+.zone-lbl{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;fill:var(--sub)}
+
+/* SVG text */
+svg text{font-family:'Barlow',sans-serif}
+svg .t-name{font-size:13px;font-weight:600;fill:var(--ink)}
+svg .t-sub{font-size:10px;font-weight:600;fill:var(--sub)}
+svg .t-val{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;fill:var(--dim);transition:fill .3s}
+svg .t-val.live{fill:var(--cyan)}
+svg .t-title{font-size:15px;font-weight:700;fill:var(--ink)}
+svg .t-stat{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;fill:var(--dim)}
+svg .t-stat.live{fill:var(--teal)}
+svg .t-label{font-size:10px;font-weight:600;fill:var(--sub)}
+svg .t-feat{font-size:10px;font-weight:600;fill:var(--dim);transition:fill .3s}
+svg .t-feat.on{fill:var(--teal)}
+
+/* Node styles */
+.nd rect{rx:7;transition:all .3s}
+.nd-src rect{fill:rgba(255,255,255,.06);stroke:var(--border-bright);stroke-width:1.5}
+.nd-wind rect{fill:rgba(96,165,250,.12);stroke:rgba(96,165,250,.4)}
+.nd-solar rect{fill:rgba(251,191,36,.1);stroke:rgba(251,191,36,.35)}
+.nd-batt rect{fill:rgba(52,211,153,.1);stroke:rgba(52,211,153,.35)}
+.nd-dg rect{fill:rgba(251,146,60,.1);stroke:rgba(251,146,60,.35)}
+.nd-ie rect{fill:rgba(255,255,255,.05);stroke:var(--border-bright);stroke-width:1}
+
+/* Expanso Edge — hidden by default, compact white box */
+.nd-exp{opacity:0;transition:opacity .5s}
+.nd-exp.visible{opacity:1}
+.nd-exp rect.exp-bg{fill:rgba(255,255,255,.95);stroke:var(--teal);stroke-width:2;rx:10;filter:drop-shadow(0 0 20px rgba(54,209,196,.15))}
+
+/* HiveMQ primary */
+.nd-hive rect{fill:rgba(245,158,11,.08);stroke:rgba(245,158,11,.35);stroke-width:1.5;rx:8}
+
+/* HiveMQ DLQ */
+.nd-dlq{opacity:0;transition:opacity .5s}
+.nd-dlq.visible{opacity:1}
+.nd-dlq rect{fill:rgba(248,113,113,.06);stroke:rgba(248,113,113,.3);stroke-width:1.5;rx:8}
+
+/* Archive */
+.nd-arch{opacity:0;transition:opacity .5s}
+.nd-arch.visible{opacity:1}
+.nd-arch rect{fill:rgba(74,222,128,.06);stroke:rgba(74,222,128,.3);stroke-width:1.5;rx:8}
+
+/* Feature indicator dots */
+.feat-dot{fill:#c0c8d2;transition:all .3s}
+.feat-dot.on{fill:var(--teal);filter:drop-shadow(0 0 4px var(--teal-gl))}
+
+/* SVG connection paths */
+.conn{fill:none;stroke-linecap:round;stroke-linejoin:round;transition:all .5s}
+.conn-src{stroke:rgba(255,255,255,.15);stroke-width:1.5}
+.conn-direct{stroke:var(--cyan);stroke-width:2;opacity:.35}
+.conn-exp-in{stroke:var(--teal);stroke-width:2;opacity:0;transition:opacity .5s}
+.conn-exp-out{stroke:var(--teal);stroke-width:2.5;opacity:0;transition:opacity .5s}
+.conn-dlq{stroke:var(--bad);stroke-width:1.5;opacity:0;transition:opacity .5s}
+.conn-archive{stroke:var(--good);stroke-width:1.5;opacity:0;transition:opacity .5s}
+.conn-drop{stroke:var(--bad);stroke-width:1;stroke-dasharray:4 6;opacity:0;transition:opacity .5s}
+
+/* Animated flow dashes */
+.flow{stroke-dasharray:6 14;animation:flowAnim 1.6s linear infinite}
+@keyframes flowAnim{to{stroke-dashoffset:-20}}
+
+/* ── Metrics ── */
+.metrics{padding:20px 40px 0}
+.mrow{display:flex;gap:10px;flex-wrap:wrap}
+.mc{
+  flex:1;min-width:120px;
+  padding:14px 12px;background:var(--surface2);border:1px solid var(--border-bright);
+  border-radius:8px;text-align:center;
+}
+.mc .mv{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;line-height:1.1;margin-bottom:3px;color:var(--ink)}
+.mc .ml{font-family:'Barlow Condensed',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--sub);font-weight:600}
+.cg{color:var(--good)!important}.cb{color:var(--bad)!important}.ct{color:var(--teal)!important}.cw{color:var(--warn)!important}
+
+/* ── Log ── */
+.log{padding:16px 40px 32px}
+.log-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.log-hd span{font-family:'Barlow Condensed',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--sub);font-weight:600}
+.log-hd .lc{font-family:'JetBrains Mono',monospace;text-transform:none;letter-spacing:0;font-size:11px}
+.lw{background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;overflow:hidden}
+table.lt{width:100%;border-collapse:collapse}
+.lt th{padding:7px 10px;text-align:left;font-family:'Barlow Condensed',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);font-weight:600;background:rgba(255,255,255,.04);border-bottom:1px solid var(--border)}
+.lt td{padding:6px 10px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.05);font-family:'JetBrains Mono',monospace;color:var(--ink)}
+.lt tr:last-child td{border-bottom:none}
+.sb{display:inline-block;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:600;text-transform:uppercase;font-family:'Barlow Condensed',sans-serif;letter-spacing:.04em}
+.sb.passed{background:rgba(74,222,128,.15);color:var(--good)}
+.sb.dropped{background:rgba(248,113,113,.15);color:var(--bad)}
+.sb.invalid{background:rgba(248,113,113,.15);color:var(--bad)}
+.sb.compressed{background:rgba(251,191,36,.15);color:var(--warn)}
+
+/* ── Pipeline + Data side-by-side ── */
+.pipeline-data-row{display:flex;gap:20px;padding:20px 40px 50px;align-items:stretch;min-height:1800px}
+.pipeline-col{flex:1;min-width:0;min-height:100%}
+.data-col{flex:1;min-width:0;display:flex;flex-direction:column;min-height:100%}
+
+/* Pipeline YAML viewer */
+.pipeline-viewer{padding:0;display:flex;flex-direction:column;height:100%}
+.pv-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.pv-header .pv-title{font-family:'Barlow Condensed',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--sub);font-weight:600}
+.pv-header .pv-file{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--teal)}
+.pv-tabs{display:flex;gap:2px;margin-bottom:8px}
+.pv-tab{
+  padding:5px 12px;border:1px solid var(--border);border-radius:5px 5px 0 0;
+  background:transparent;color:var(--dim);
+  font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;
+  cursor:pointer;transition:all .2s;border-bottom:none;
+}
+.pv-tab:hover{color:var(--sub)}
+.pv-tab.active{background:var(--surface2);color:var(--teal);border-color:var(--teal)}
+.pv-code{
+  background:rgba(0,0,0,.4);border:1px solid var(--border-bright);border-radius:0 8px 8px 8px;
+  padding:16px 20px;overflow-x:auto;overflow-y:hidden;flex:1;
+}
+.pv-code pre{
+  font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6;
+  color:var(--sub);white-space:pre;margin:0;
+}
+.pv-code pre .yk{color:#ff79c6}
+.pv-code pre .yv{color:#50fa7b}
+.pv-code pre .yc{color:#6272a4}
+.pv-code pre .ys{color:#f1fa8c}
+.pv-code pre .yn{color:#bd93f9}
+.pv-empty{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.03);border:2px dashed var(--mute);border-radius:8px;
+  color:var(--dim);font-size:22px;font-weight:500;text-align:center;
+  padding:40px;line-height:1.4;
+}
+
+/* Log in side-by-side mode */
+.log-side{padding:0;flex:1;display:flex;flex-direction:column;height:100%}
+.log-side .lw{flex:1;overflow:hidden}
+.log-side .lt{vertical-align:top}
+.log-side .lt td,.log-side .lt th{padding:5px 8px;font-size:11px}
+@keyframes logSlideIn{
+  from{opacity:0;transform:translateY(-8px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.lt tr.new-row{animation:logSlideIn .2s ease-out}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>SCADA → Expanso Edge → HiveMQ</h1>
 
-    <div class="flow">
-      <div class="nodes">
-        <div class="node">SCADA Sim<br><span class="muted">OPC-UA</span></div>
-        <div class="arrow"></div>
-        
-        <div class="arrow"></div>
-        <div class="node">Expanso Edge<br><span class="muted">Policy + Transform</span></div>
-        <div class="arrow"></div>
-        <div class="node">HiveMQ<br><span class="muted">Final Broker</span></div>
-      </div>
-    </div>
+<header class="hdr">
+  <h1>SCADA <b>&rarr;</b> Expanso Edge <b>&rarr;</b> HiveMQ</h1>
+  <div class="live"><div class="dot" id="conn-dot"></div><span id="conn-label">Connecting</span></div>
+</header>
 
-    <div class="grid">
-      <div class="panel">
-        <h2>(A) Default Flow</h2>
-        <div class="muted">Raw Sparkplug stream visibility (no filtering intent)</div>
-        <div class="stats" id="panel-a-stats"></div>
-      </div>
+<section class="hero">
+  <h2>Your pipeline works. It just wasn't built for <em>this</em>.</h2>
+  <p>Hundreds of SCADA sites push telemetry around the clock. Every reading flows straight to your broker. Enable capabilities one by one and watch Expanso Edge transform the architecture.</p>
+</section>
 
-      <div class="panel">
-        <h2>(B) Expanso In-Line</h2>
-        <div class="toggles" id="toggles"></div>
-        <div class="stats" id="panel-b-stats"></div>
-        <div class="chart">
-          <div class="bar in" id="bar-in" style="height: 20%"></div>
-          <div class="bar out" id="bar-out" style="height: 20%"></div>
-        </div>
-      </div>
+<section class="controls">
+  <span class="ctrl-label">Enable</span>
+  <button class="tbtn" id="btn-deadband" onclick="advanceStage()"><span class="ind"></span>Deadband</button>
+  <button class="tbtn" id="btn-schema" onclick="advanceStage()" disabled><span class="ind"></span>Schema</button>
+  <button class="tbtn" id="btn-compression" onclick="advanceStage()" disabled><span class="ind"></span>Compression</button>
+  <button class="tbtn" id="btn-dlq" onclick="advanceStage()" disabled><span class="ind"></span>DLQ</button>
+</section>
 
-      <div class="panel">
-        <h2>(C) Expanso Parallel</h2>
-        <div class="muted">Parallel path view (direct SCADA policy simulation)</div>
-        <div class="stats" id="panel-c-stats"></div>
-      </div>
-    </div>
-
-    <div class="msg-box">
-      <table>
-        <thead>
-          <tr>
-            <th>Metric</th><th>Value</th><th>Type</th><th>Timestamp</th><th>Quality</th><th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="messages"></tbody>
-      </table>
-    </div>
+<section class="stage">
+  <div class="stage-box">
+    <div class="st" id="st">Direct Flow</div>
+    <div class="sd" id="sd">Raw telemetry flows from SCADA sources through Ignition Edge directly to HiveMQ. No filtering, no validation, no intelligence at the edge.</div>
   </div>
+</section>
 
-  <script>
-    const state = { deadband: false, schema: false, compression: false, fanout: false };
-    const featureOrder = ["deadband", "schema", "compression", "fanout"];
+<!-- Architecture Diagram -->
+<section class="arch">
+<svg id="svg" viewBox="0 0 1100 480" preserveAspectRatio="xMidYMid meet">
+<defs>
+  <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
 
-    function fmt(v) {
-      if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
-      return String(v);
+<!-- Zone backgrounds -->
+<rect class="zone-bg" x="15" y="30" width="280" height="420"/>
+<!-- Edge zone: snug around Expanso box. Expanso y=170 h=165 → zone y=150 h=205 -->
+<rect class="zone-bg z-edge" id="zone-edge" x="415" y="150" width="260" height="205" style="opacity:0;transition:opacity .5s"/>
+<rect class="zone-bg z-ingest" x="800" y="30" width="285" height="420"/>
+<text class="zone-lbl" x="155" y="22" text-anchor="middle">COLLECTION</text>
+<text class="zone-lbl" id="lbl-edge" x="545" y="142" text-anchor="middle" style="opacity:0;transition:opacity .5s">EXPANSO EDGE PROCESSING</text>
+<text class="zone-lbl" x="942" y="22" text-anchor="middle">INGESTION</text>
+
+<!-- Source → IE short connectors (source centers: 92, 192, 292, 392) -->
+<line class="conn conn-src flow" x1="148" y1="92" x2="192" y2="92"/>
+<line class="conn conn-src flow" x1="148" y1="192" x2="192" y2="192"/>
+<line class="conn conn-src flow" x1="148" y1="292" x2="192" y2="292"/>
+<line class="conn conn-src flow" x1="148" y1="392" x2="192" y2="392"/>
+
+<!-- PHASE 0: Direct IE → HiveMQ. HiveMQ default center ~y=162 -->
+<path id="p-direct-0" class="conn conn-direct flow" d="M 270,92 L 820,120"/>
+<path id="p-direct-1" class="conn conn-direct flow" d="M 270,192 L 820,160"/>
+<path id="p-direct-2" class="conn conn-direct flow" d="M 270,292 L 820,200"/>
+<path id="p-direct-3" class="conn conn-direct flow" d="M 270,392 L 820,230"/>
+
+<!-- PHASE 1+: IE → Expanso left edge (x=435). Box y=170 h=145, so entry spread y=200..285 -->
+<path id="p-in-0" class="conn conn-exp-in flow" d="M 270,92 C 350,92 400,200 435,205"/>
+<path id="p-in-1" class="conn conn-exp-in flow" d="M 270,192 C 350,192 400,225 435,230"/>
+<path id="p-in-2" class="conn conn-exp-in flow" d="M 270,292 C 350,292 400,255 435,258"/>
+<path id="p-in-3" class="conn conn-exp-in flow" d="M 270,392 C 350,392 400,280 435,282"/>
+
+<!-- Expanso right edge (x=655) → HiveMQ (center ~162) -->
+<path id="p-out" class="conn conn-exp-out flow" d="M 655,235 C 710,230 770,170 820,162"/>
+
+<!-- Expanso bottom (y=335) → drop below edge zone (zone bottom = y=355) -->
+<path id="p-drop" class="conn conn-drop" d="M 545,335 C 545,370 545,395 545,415"/>
+
+<!-- Expanso right → DLQ (center ~380) -->
+<path id="p-dlq" class="conn conn-dlq flow" d="M 655,255 C 710,280 770,370 820,378"/>
+
+<!-- Expanso right → Archive (center ~300) -->
+<path id="p-archive" class="conn conn-archive flow" d="M 655,248 C 710,260 770,292 820,298"/>
+
+<!-- === NODES === -->
+<!-- Source: Wind (center y=92) -->
+<g class="nd nd-src nd-wind">
+  <rect x="30" y="66" width="118" height="52"/>
+  <rect x="30" y="66" width="4" height="52" rx="2" fill="var(--wind)" opacity=".8"/>
+  <text class="t-name" x="44" y="87">Wind Turbine</text>
+  <text class="t-val" x="44" y="107" id="v-wind">--</text>
+</g>
+<!-- Source: Solar (center y=192) -->
+<g class="nd nd-src nd-solar">
+  <rect x="30" y="166" width="118" height="52"/>
+  <rect x="30" y="166" width="4" height="52" rx="2" fill="var(--solar)" opacity=".8"/>
+  <text class="t-name" x="44" y="187">Solar Array</text>
+  <text class="t-val" x="44" y="207" id="v-solar">--</text>
+</g>
+<!-- Source: Battery (center y=292) -->
+<g class="nd nd-src nd-batt">
+  <rect x="30" y="266" width="118" height="52"/>
+  <rect x="30" y="266" width="4" height="52" rx="2" fill="var(--batt)" opacity=".8"/>
+  <text class="t-name" x="44" y="287">Battery Bank</text>
+  <text class="t-val" x="44" y="307" id="v-batt">--</text>
+</g>
+<!-- Source: DG (center y=392) -->
+<g class="nd nd-src nd-dg">
+  <rect x="30" y="366" width="118" height="52"/>
+  <rect x="30" y="366" width="4" height="52" rx="2" fill="var(--dg)" opacity=".8"/>
+  <text class="t-name" x="44" y="387">Dist. Gen</text>
+  <text class="t-val" x="44" y="407" id="v-dg">--</text>
+</g>
+
+<!-- IE nodes (same y-centers as sources) -->
+<g class="nd nd-ie"><rect x="192" y="75" width="78" height="34"/><text class="t-sub" x="231" y="96" text-anchor="middle">IE Wind</text></g>
+<g class="nd nd-ie"><rect x="192" y="175" width="78" height="34"/><text class="t-sub" x="231" y="196" text-anchor="middle">IE Solar</text></g>
+<g class="nd nd-ie"><rect x="192" y="275" width="78" height="34"/><text class="t-sub" x="231" y="296" text-anchor="middle">IE Batt</text></g>
+<g class="nd nd-ie"><rect x="192" y="375" width="78" height="34"/><text class="t-sub" x="231" y="396" text-anchor="middle">IE DG</text></g>
+
+<!-- Expanso Edge — compact white box, centered at y=242 (matching sources midpoint) -->
+<!-- Box: x=435, y=170, w=220, h=145 -->
+<g class="nd nd-exp" id="exp-node">
+  <rect class="exp-bg" x="435" y="170" width="220" height="165"/>
+  <!-- Logo -->
+  <image href="https://expanso.io/images/logos/expanso-logo-nav.avif" x="480" y="178" width="130" height="26" preserveAspectRatio="xMidYMid meet"/>
+  <!-- Feature indicators: 2x2 grid -->
+  <circle class="feat-dot" id="fd-deadband" cx="455" cy="220" r="4"/>
+  <text class="t-feat" id="fl-deadband" x="465" y="224" style="fill:#3a4f65">Deadband</text>
+  <circle class="feat-dot" id="fd-schema" cx="555" cy="220" r="4"/>
+  <text class="t-feat" id="fl-schema" x="565" y="224" style="fill:#3a4f65">Schema</text>
+  <circle class="feat-dot" id="fd-compression" cx="455" cy="244" r="4"/>
+  <text class="t-feat" id="fl-compression" x="465" y="248" style="fill:#3a4f65">Compress</text>
+  <circle class="feat-dot" id="fd-dlq" cx="555" cy="244" r="4"/>
+  <text class="t-feat" id="fl-dlq" x="565" y="248" style="fill:#3a4f65">DLQ</text>
+  <!-- Stats -->
+  <text class="t-stat" id="exp-msgs" x="545" y="282" text-anchor="middle" style="fill:#1a2a3a">0</text>
+  <text class="t-label" x="545" y="298" text-anchor="middle" style="fill:#6b7f94">processed</text>
+  <text id="exp-drop" x="545" y="310" text-anchor="middle" style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;fill:var(--bad)"></text>
+</g>
+
+<!-- HiveMQ Primary — x=820, w=245. Default: y=75, h=175, center ~162 -->
+<!-- Content evenly distributed: 5 items across 175px → ~30px spacing -->
+<!-- y=75+30=105, +28=133, +30=163, +28=191, +25=216 -->
+<g class="nd nd-hive" id="hive-primary">
+  <rect id="hive-rect" x="820" y="75" width="245" height="175"/>
+  <text class="t-title" x="942" y="115" text-anchor="middle" fill="var(--amber)">HiveMQ</text>
+  <text class="t-sub" x="942" y="135" text-anchor="middle">MQTT Broker</text>
+  <text class="t-stat" id="hive-msgs" x="942" y="175" text-anchor="middle">0</text>
+  <text class="t-label" x="942" y="195" text-anchor="middle">messages</text>
+  <text class="t-val" id="hive-rate" x="942" y="225" text-anchor="middle" style="font-size:11px"></text>
+</g>
+
+<!-- Archive (fan-out) — y=270, h=60, center ~300 -->
+<g class="nd nd-arch" id="archive-dest">
+  <rect x="820" y="270" width="245" height="60"/>
+  <text class="t-name" x="942" y="296" text-anchor="middle" fill="var(--good)">Archive</text>
+  <text class="t-sub" x="942" y="316" text-anchor="middle" style="fill:var(--good);opacity:.7">spBv1.0/#</text>
+</g>
+
+<!-- HiveMQ DLQ (schema) — y=350, h=60, center ~380 -->
+<g class="nd nd-dlq" id="hive-dlq">
+  <rect x="820" y="350" width="245" height="60"/>
+  <text class="t-name" x="942" y="376" text-anchor="middle" fill="var(--bad)">HiveMQ DLQ</text>
+  <text class="t-sub" x="942" y="396" text-anchor="middle" style="fill:var(--bad);opacity:.7">Invalid Messages</text>
+</g>
+
+<!-- Drop label (deadband) — boxed, centered below edge zone -->
+<g id="drop-label" style="opacity:0;transition:opacity .5s">
+  <rect x="505" y="420" width="80" height="26" rx="5" fill="#0a0a0a" stroke="var(--bad)" stroke-width="1.5"/>
+  <text x="545" y="437" text-anchor="middle" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;fill:#ffffff;letter-spacing:.04em">FILTERED</text>
+</g>
+
+</svg>
+</section>
+
+<!-- Metrics -->
+<section class="metrics">
+  <div class="mrow">
+    <div class="mc"><div class="mv" id="m-in">0</div><div class="ml">Messages In</div></div>
+    <div class="mc"><div class="mv ct" id="m-out">0</div><div class="ml">Messages Out</div></div>
+    <div class="mc"><div class="mv cb" id="m-dropped">0</div><div class="ml">Dropped</div></div>
+    <div class="mc"><div class="mv cb" id="m-invalid">0</div><div class="ml">Invalid</div></div>
+    <div class="mc"><div class="mv cg" id="m-saved">0%</div><div class="ml">Bytes Saved</div></div>
+    <div class="mc"><div class="mv" id="m-archive" style="font-size:14px">OFF</div><div class="ml">DLQ</div></div>
+  </div>
+</section>
+
+<!-- Pipeline YAML + Data Flow side-by-side -->
+<div class="pipeline-data-row">
+  <!-- Left: YAML -->
+  <div class="pipeline-col">
+    <section class="pipeline-viewer" id="pv-section">
+      <div class="pv-header">
+        <span class="pv-title">Expanso Edge Pipeline Config</span>
+        <span class="pv-file" id="pv-filename"></span>
+      </div>
+      <div class="pv-tabs" id="pv-tabs"></div>
+      <div id="pv-body"></div>
+    </section>
+  </div>
+  <!-- Right: Live data log -->
+  <div class="data-col">
+    <section class="log log-side">
+      <div class="log-hd">
+        <span>Live Data Flow</span>
+        <span class="lc" id="lc">0 processed</span>
+      </div>
+      <div class="lw">
+        <table class="lt">
+          <thead><tr><th>Time</th><th>Source</th><th>Metric</th><th>Value</th><th>Status</th></tr></thead>
+          <tbody id="lb">
+            <tr id="lb-empty"><td colspan="5" style="text-align:center;color:var(--dim);font-style:italic;padding:20px">Waiting for MQTT data&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
+<script>
+/* ── State ── */
+var S={deadband:false,schema:false,compression:false,dlq:false};
+var STAGE_ORDER=['deadband','schema','compression','dlq'];
+var M={mi:0,bi:0,mo:0,bo:0,md:0,vf:0};
+var LOG=[];
+var logQueue=[];
+var lastValues={};
+var latestByNode={};
+var mqttOk=false;
+var rateWindow=[];
+
+var nodeMap={
+  'wind-turbine-01':{el:'v-wind',label:'Wind'},
+  'solar-array-02':{el:'v-solar',label:'Solar'},
+  'battery-bank-03':{el:'v-batt',label:'Battery'},
+  'distgen-04':{el:'v-dg',label:'DG'}
+};
+
+/* Track previous state to detect what changed */
+var prevS={deadband:false,schema:false,compression:false,dlq:false};
+
+function currentLevel(){
+  for(var i=STAGE_ORDER.length-1;i>=0;i--){
+    if(S[STAGE_ORDER[i]])return i+1;
+  }
+  return 0;
+}
+
+function advanceStage(){
+  var level=currentLevel();
+  if(level>=STAGE_ORDER.length)return;
+  var next=STAGE_ORDER[level];
+  S[next]=true;
+
+  /* Determine which paths are affected and kill particles */
+  var kill=[];
+  var anyNow=S.deadband||S.schema||S.compression||S.dlq;
+  var anyPrev=prevS.deadband||prevS.schema||prevS.compression||prevS.dlq;
+
+  if(anyNow!==anyPrev){
+    kill.push('p-direct-0','p-direct-1','p-direct-2','p-direct-3');
+    kill.push('p-in-0','p-in-1','p-in-2','p-in-3');
+    kill.push('p-out');
+  }
+  if(S.deadband!==prevS.deadband)kill.push('p-drop');
+  if(S.schema!==prevS.schema)kill.push('p-dlq');
+  if(S.dlq!==prevS.dlq)kill.push('p-archive');
+  if(S.compression!==prevS.compression)kill.push('p-out');
+
+  if(kill.length>0)killParticlesOnPaths(kill);
+
+  /* Clear pending log entries so new state shows immediately */
+  logQueue.length=0;
+  /* Clear visible log rows — fresh start for new stage */
+  var tb=document.getElementById('lb');
+  while(tb.firstChild)tb.removeChild(tb.firstChild);
+
+  prevS={deadband:S.deadband,schema:S.schema,compression:S.compression,dlq:S.dlq};
+  render();
+}
+
+/* ── MQTT ── */
+var wsProto=window.location.protocol==='https:'?'wss:':'ws:';
+var wsUrl=wsProto+'//'+window.location.host+'/mqtt';
+var client=mqtt.connect(wsUrl,{
+  clientId:'dash-'+Math.random().toString(16).slice(2,8),
+  clean:true,reconnectPeriod:3000
+});
+
+client.on('connect',function(){
+  mqttOk=true;
+  document.getElementById('conn-dot').style.background='var(--good)';
+  document.getElementById('conn-label').textContent='Live';
+  client.subscribe('spBv1.0/#',{qos:0});
+});
+client.on('offline',function(){
+  mqttOk=false;
+  document.getElementById('conn-dot').style.background='var(--bad)';
+  document.getElementById('conn-label').textContent='Offline';
+});
+client.on('error',function(){
+  mqttOk=false;
+  document.getElementById('conn-dot').style.background='var(--bad)';
+  document.getElementById('conn-label').textContent='Error';
+});
+
+client.on('message',function(topic,message){
+  var payload;
+  try{payload=JSON.parse(message.toString())}catch(e){return}
+  var parts=topic.split('/');
+  var nodeId=parts[3]||'unknown';
+  var deviceId=parts[4]||'unknown';
+  var rawBytes=message.length;
+  var metrics=payload.metrics||[];
+
+  rateWindow.push(Date.now());
+
+  metrics.forEach(function(metric){
+    processMetric(nodeId,deviceId,metric,rawBytes);
+  });
+
+  if(nodeMap[nodeId]&&metrics.length>0){
+    var temp=metrics.find(function(m){return m.name==='Temperature'});
+    if(temp){
+      var el=document.getElementById(nodeMap[nodeId].el);
+      if(el){
+        el.textContent=Number(temp.value).toFixed(1)+'\u00b0C';
+        el.classList.add('live');
+      }
     }
+    latestByNode[nodeId]=temp?temp.value:null;
+  }
 
-    function makeStats(target, rows) {
-      target.innerHTML = rows.map(([k, v]) => `<div>${k}</div><div class="stat-val">${fmt(v)}</div>`).join("");
+  spawnParticle(nodeId);
+  updateMetrics();
+});
+
+function processMetric(node,device,metric,rawBytes){
+  M.mi++;
+  M.bi+=rawBytes;
+  var key=node+'/'+device+'/'+metric.name;
+  var st='passed',fw=true;
+
+  if(S.deadband&&metric.type==='Double'){
+    var prev=lastValues[key];
+    var threshold=metric.name==='Temperature'?1.0:0.5;
+    if(prev!==undefined&&Math.abs(metric.value-prev)<threshold){
+      st='dropped';fw=false;M.md++;
     }
+  }
+  lastValues[key]=metric.value;
 
-    function renderToggles() {
-      const wrap = document.getElementById("toggles");
-      wrap.innerHTML = "";
-      featureOrder.forEach((f) => {
-        const b = document.createElement("button");
-        b.textContent = `${f.toUpperCase()} : ${state[f] ? "ON" : "OFF"}`;
-        b.className = state[f] ? "on" : "";
-        b.onclick = async () => {
-          state[f] = !state[f];
-          await fetch("/api/config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(state)
+  if(fw&&S.schema){
+    var bad=false;
+    if(metric.name==='DoorSensor'){
+      var v=metric.value;
+      if(v!==true&&v!==false&&v!==0&&v!==1)bad=true;
+    }
+    if(metric.name==='Temperature'&&(metric.value<-40||metric.value>150))bad=true;
+    if(bad){st='invalid';fw=false;M.vf++}
+  }
+
+  if(fw){
+    M.mo++;
+    var ob=rawBytes;
+    if(S.compression){ob=Math.max(24,Math.round(rawBytes*.36));st='compressed'}
+    M.bo+=ob;
+  }
+
+  var nodeName=nodeMap[node]?nodeMap[node].label:node;
+  logQueue.push({
+    tm:new Date().toLocaleTimeString(),
+    src:nodeName,
+    m:metric.name,
+    v:metric.type==='Double'?Number(metric.value).toFixed(2):String(metric.value),
+    s:st
+  });
+}
+
+/* ── Particle System ── */
+/*
+ * Speed design:
+ *   Left side (IE → Expanso):  FAST  — 600ms
+ *   Right side (Expanso → HiveMQ): SLOW — 1200ms (2x slower)
+ *   Direct (phase 0):          1400ms total
+ *   Compression: same speed, but BIGGER particles (batched)
+ */
+var DUR_LEFT=600;
+var DUR_RIGHT=1200;
+var DUR_DIRECT=1400;
+var PARTICLE_MAX_AGE=4000; /* force-release after 4s no matter what */
+var svgEl=null;
+var particlePool=[];
+var MAX_PARTICLES=200;
+
+function getSvg(){
+  if(!svgEl)svgEl=document.getElementById('svg');
+  return svgEl;
+}
+
+var particleGen=0; /* global generation counter */
+
+function initParticle(p,color,radius,pathId){
+  p.inUse=true;
+  p.pathId=pathId||'';
+  p.born=Date.now();
+  p.gen=++particleGen;
+  p.el.setAttribute('fill',color);
+  p.el.setAttribute('r',radius);
+  p.el.setAttribute('opacity','0.85');
+  return p;
+}
+
+function getOrCreateParticle(color,radius,pathId){
+  var i;
+  /* First pass: find a free particle */
+  for(i=0;i<particlePool.length;i++){
+    if(!particlePool[i].inUse) return initParticle(particlePool[i],color,radius,pathId);
+  }
+  /* Second pass: reclaim oldest stuck particle (>PARTICLE_MAX_AGE) */
+  var oldest=null,oldestAge=0,now=Date.now();
+  for(i=0;i<particlePool.length;i++){
+    var age=now-particlePool[i].born;
+    if(particlePool[i].inUse&&age>PARTICLE_MAX_AGE&&age>oldestAge){
+      oldest=particlePool[i];oldestAge=age;
+    }
+  }
+  if(oldest) return initParticle(oldest,color,radius,pathId);
+  /* Create new if under cap */
+  if(particlePool.length>=MAX_PARTICLES){
+    /* Force-reclaim the absolute oldest regardless of age */
+    oldest=particlePool[0];oldestAge=0;
+    for(i=0;i<particlePool.length;i++){
+      var age=now-particlePool[i].born;
+      if(age>oldestAge){oldest=particlePool[i];oldestAge=age;}
+    }
+    return initParticle(oldest,color,radius,pathId);
+  }
+  var ns='http://www.w3.org/2000/svg';
+  var c=document.createElementNS(ns,'circle');
+  c.setAttribute('r',radius);
+  c.setAttribute('fill',color);
+  c.setAttribute('opacity','0.85');
+  getSvg().appendChild(c);
+  var p={el:c,inUse:true,pathId:pathId||'',born:Date.now(),gen:particleGen};
+  particlePool.push(p);
+  return p;
+}
+
+function releaseParticle(p){
+  if(!p)return;
+  p.inUse=false;
+  p.pathId='';
+  p.el.setAttribute('opacity','0');
+}
+
+function killParticlesOnPaths(pathIds){
+  for(var i=0;i<particlePool.length;i++){
+    if(particlePool[i].inUse&&pathIds.indexOf(particlePool[i].pathId)>=0){
+      releaseParticle(particlePool[i]);
+    }
+  }
+}
+
+function animateAlongPath(particle,pathId,duration,onDone){
+  if(!particle){return;}
+  particle.pathId=pathId;
+  var pathEl=document.getElementById(pathId);
+  if(!pathEl){releaseParticle(particle);return;}
+  var len=pathEl.getTotalLength();
+  var endPt=pathEl.getPointAtLength(len);
+  var myGen=particle.gen; /* capture generation to detect reclaim */
+  var start=null;
+  function step(ts){
+    /* Stop if particle was released or reclaimed for reuse */
+    if(!particle.inUse||particle.gen!==myGen)return;
+    if(!start)start=ts;
+    var t=Math.min((ts-start)/duration,1);
+    var pt=pathEl.getPointAtLength(len*t);
+    particle.el.setAttribute('cx',pt.x);
+    particle.el.setAttribute('cy',pt.y);
+    /* Release when within 2px of destination or animation complete */
+    var dx=pt.x-endPt.x,dy=pt.y-endPt.y;
+    if(t>=1||dx*dx+dy*dy<4){
+      releaseParticle(particle);
+      if(onDone)onDone();
+      return;
+    }
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+var nodeToIdx={
+  'wind-turbine-01':0,
+  'solar-array-02':1,
+  'battery-bank-03':2,
+  'distgen-04':3
+};
+
+function spawnParticle(nodeId){
+  var idx=nodeToIdx[nodeId];
+  if(idx===undefined)idx=0;
+  var anyFeature=S.deadband||S.schema||S.compression||S.dlq;
+
+  if(!anyFeature){
+    /* Phase 0: single particle, direct path */
+    var p=getOrCreateParticle('#5ac8fa','3.5');
+    animateAlongPath(p,'p-direct-'+idx,DUR_DIRECT,function(){
+      releaseParticle(p);
+    });
+  }else{
+    /* Phase 1+: FAST left side (IE → Expanso) */
+    var p1=getOrCreateParticle('#36d1c4','3.5');
+    if(!p1)return; /* pool exhausted, skip gracefully */
+    /* Snapshot state at spawn time so in-flight particles
+       finish with the state they started with */
+    var snap={
+      deadband:S.deadband,schema:S.schema,
+      compression:S.compression,dlq:S.dlq
+    };
+    animateAlongPath(p1,'p-in-'+idx,DUR_LEFT,function(){
+      releaseParticle(p1);
+
+      /* Decide outcome based on snapshot */
+      var filtered=snap.deadband&&Math.random()<0.18;
+      var invalid=snap.schema&&Math.random()<0.08; /* ~8% → DLQ */
+
+      /* Compression: only emit 25% of output particles (75% suppressed) */
+      var compressSkip=snap.compression&&Math.random()>0.25;
+
+      if(filtered){
+        /* Drop: exits bottom of Expanso */
+        var pd=getOrCreateParticle('#f87171','2.5');
+        animateAlongPath(pd,'p-drop',700,function(){
+          releaseParticle(pd);
+        });
+      }else if(invalid){
+        /* DLQ: red particle to second HiveMQ */
+        var pi=getOrCreateParticle('#f87171','3');
+        animateAlongPath(pi,'p-dlq',DUR_RIGHT,function(){
+          releaseParticle(pi);
+        });
+      }else if(compressSkip){
+        /* Compression absorbed this particle — no output */
+      }else{
+        /* Good: teal particle to primary HiveMQ */
+        /* Compression: same speed, just 75% fewer particles */
+        var pg=getOrCreateParticle('#36d1c4','3.5');
+        animateAlongPath(pg,'p-out',DUR_RIGHT,function(){
+          releaseParticle(pg);
+        });
+
+        /* Fan-out: also to archive */
+        if(snap.dlq){
+          var pa=getOrCreateParticle('#4ade80','3');
+          animateAlongPath(pa,'p-archive',DUR_RIGHT,function(){
+            releaseParticle(pa);
           });
-          await fetch("/api-parallel/config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(state)
-          });
-          renderToggles();
-        };
-        wrap.appendChild(b);
+        }
+      }
+    });
+  }
+}
+
+/* ── Stage descriptions ── */
+var stages=[
+  {t:'Direct Flow',d:'Raw telemetry flows from SCADA sources through Ignition Edge directly to HiveMQ. No filtering, no validation, no intelligence at the edge.'},
+  {t:'+ Deadband Filtering',d:'Expanso Edge suppresses readings that haven\'t changed meaningfully. Temperature must change >1\u00b0C, pressure >0.5 units. Redundant data drops out of the pipeline.'},
+  {t:'+ Schema Validation',d:'JSON Schema validation at the edge. Every payload is checked against a strict schema. Valid messages pass through; invalid readings are flagged for the Dead Letter Queue.'},
+  {t:'+ Payload Compression',d:'gzip compression reduces Sparkplug B payloads by 60\u201380%. Same data, fewer bytes on the wire \u2014 only one in four messages needs to leave the edge.'},
+  {t:'+ Dead Letter Queue',d:'Invalid and rejected messages are routed to a dedicated DLQ topic instead of being silently dropped. Operations teams can inspect, replay, or alert on bad data.'}
+];
+
+function currentStage(){
+  return stages[currentLevel()];
+}
+
+/* ── Render ── */
+function render(){
+  var any=S.deadband||S.schema||S.compression||S.dlq;
+
+  /* Show/hide Expanso Edge */
+  document.getElementById('exp-node').classList.toggle('visible',any);
+
+  /* Direct paths: visible only when NO features */
+  ['p-direct-0','p-direct-1','p-direct-2','p-direct-3'].forEach(function(id){
+    document.getElementById(id).style.opacity=any?'0':'0.35';
+  });
+
+  /* Expanso input paths */
+  ['p-in-0','p-in-1','p-in-2','p-in-3'].forEach(function(id){
+    document.getElementById(id).style.opacity=any?'0.7':'0';
+  });
+
+  /* Expanso → HiveMQ output path */
+  document.getElementById('p-out').style.opacity=any?'0.8':'0';
+
+  /* Deadband drop path + label */
+  document.getElementById('p-drop').style.opacity=S.deadband?'0.5':'0';
+  document.getElementById('drop-label').style.opacity=S.deadband?'1':'0';
+
+  /* Schema: show DLQ HiveMQ and path */
+  document.getElementById('hive-dlq').classList.toggle('visible',S.schema);
+  document.getElementById('p-dlq').style.opacity=S.schema?'0.6':'0';
+
+  /* HiveMQ box stays fixed size always */
+
+  /* Fan-out: show archive + path */
+  document.getElementById('archive-dest').classList.toggle('visible',S.dlq);
+  document.getElementById('p-archive').style.opacity=S.dlq?'0.6':'0';
+
+  /* Edge zone: hidden in phase 0, visible when features active */
+  var zoneEdge=document.getElementById('zone-edge');
+  var lblEdge=document.getElementById('lbl-edge');
+  zoneEdge.style.opacity=any?'1':'0';
+  lblEdge.style.opacity=any?'1':'0';
+  if(any){
+    zoneEdge.style.stroke='var(--teal)';
+    zoneEdge.style.strokeDasharray='none';
+    zoneEdge.style.fill='rgba(54,209,196,.04)';
+    lblEdge.style.fill='var(--teal)';
+  }
+
+  /* Buttons — sequential: enabled only if previous stage is active */
+  var level=currentLevel();
+  STAGE_ORDER.forEach(function(f,i){
+    var btn=document.getElementById('btn-'+f);
+    btn.classList.toggle('on',S[f]);
+    btn.disabled=i>level; /* can only click next unactivated stage */
+  });
+
+  /* Feature dots */
+  ['deadband','schema','compression','dlq'].forEach(function(f){
+    document.getElementById('fd-'+f).classList.toggle('on',S[f]);
+    document.getElementById('fl-'+f).classList.toggle('on',S[f]);
+  });
+
+  /* Stage description */
+  var stg=currentStage();
+  document.getElementById('st').textContent=stg.t;
+  document.getElementById('sd').textContent=stg.d;
+
+  /* Expanso stats */
+  var dropText='';
+  if(S.deadband&&M.md>0)dropText=M.md+' filtered';
+  if(S.schema&&M.vf>0)dropText+=(dropText?' | ':'')+M.vf+' invalid';
+  document.getElementById('exp-drop').textContent=dropText;
+
+  /* Archive metric */
+  var am=document.getElementById('m-archive');
+  am.textContent=S.dlq?'ACTIVE':'OFF';
+  am.style.color=S.dlq?'var(--good)':'';
+
+  /* Pipeline YAML viewer */
+  renderPipelineViewer();
+}
+
+function updateMetrics(){
+  var sp=M.bi===0?0:Math.max(0,Math.round((1-M.bo/M.bi)*100));
+
+  document.getElementById('m-in').textContent=M.mi.toLocaleString();
+  document.getElementById('m-out').textContent=M.mo.toLocaleString();
+  document.getElementById('m-dropped').textContent=M.md.toLocaleString();
+  document.getElementById('m-invalid').textContent=M.vf.toLocaleString();
+
+  var savedEl=document.getElementById('m-saved');
+  savedEl.textContent=sp+'%';
+  savedEl.className='mv'+(sp>0?' cg':'');
+
+  document.getElementById('lc').textContent=M.mi+' processed';
+  document.getElementById('exp-msgs').textContent=M.mi.toLocaleString();
+  if(M.mi>0)document.getElementById('exp-msgs').classList.add('live');
+  document.getElementById('hive-msgs').textContent=M.mo.toLocaleString();
+  if(M.mo>0)document.getElementById('hive-msgs').classList.add('live');
+
+  var now=Date.now();
+  rateWindow=rateWindow.filter(function(t){return now-t<5000});
+  var rate=rateWindow.length>0?Math.round(rateWindow.length/5*60):0;
+  document.getElementById('hive-rate').textContent=rate>0?rate+' msg/min':'';
+
+  updateLog();
+}
+
+var LOG_MAX=60;
+
+function updateLog(){
+  /* no-op: log is now drip-fed via logDrip() */
+}
+
+/* Drip one queued entry into the visible log every 250ms */
+function logDrip(){
+  if(logQueue.length===0)return;
+  var r=logQueue.shift();
+  var tb=document.getElementById('lb');
+  /* Remove empty placeholder if present */
+  var empty=document.getElementById('lb-empty');
+  if(empty)empty.remove();
+  var tr=document.createElement('tr');
+  tr.className='new-row';
+  [r.tm,r.src,r.m,r.v].forEach(function(v){
+    var td=document.createElement('td');
+    td.textContent=v;
+    tr.appendChild(td);
+  });
+  var td=document.createElement('td');
+  var sp=document.createElement('span');
+  sp.className='sb '+r.s;
+  sp.textContent=r.s;
+  td.appendChild(sp);
+  tr.appendChild(td);
+  /* Prepend to top of table */
+  if(tb.firstChild){
+    tb.insertBefore(tr,tb.firstChild);
+  }else{
+    tb.appendChild(tr);
+  }
+  /* Trim old rows */
+  while(tb.children.length>LOG_MAX){
+    tb.removeChild(tb.lastChild);
+  }
+  /* Remove animation class after it completes */
+  setTimeout(function(){tr.classList.remove('new-row')},250);
+}
+setInterval(logDrip,250);
+
+/* ── Pipeline YAML data (cumulative — each stage adds to previous) ── */
+var PIPELINES=[
+  /* Stage 0: no pipeline (direct flow) */
+  null,
+  /* Stage 1: Deadband only */
+  {file:'01-deadband.yaml',yaml:'\
+# Stage 1: Deadband Filtering\n\
+name: scada-edge-pipeline\n\
+type: pipeline\n\
+\n\
+config:\n\
+  input:\n\
+    mqtt:\n\
+      urls: ["tcp://${MQTT_SOURCE_HOST}:${MQTT_SOURCE_PORT}"]\n\
+      topics: ["spBv1.0/#"]\n\
+      client_id: "expanso-edge-in"\n\
+\n\
+  pipeline:\n\
+    processors:\n\
+      # --- Deadband: suppress unchanged readings ---\n\
+      - cache:\n\
+          resource: deadband_cache\n\
+          operator: get\n\
+          key: \'${! meta("mqtt_topic") }\'\n\
+      - bloblang: |\n\
+          let prev = if content().length() > 0 { content().parse_json() } else { null }\n\
+          let curr = this\n\
+          let dominated = if $prev != null {\n\
+            $prev.metrics.all(m -> $curr.metrics.exists(\n\
+              c -> c.name == m.name &&\n\
+                   c.type == "Double" &&\n\
+                   (c.value - m.value).abs() < 1.0\n\
+            ))\n\
+          } else { false }\n\
+          root = if $dominated { deleted() } else { $curr }\n\
+      - cache:\n\
+          resource: deadband_cache\n\
+          operator: set\n\
+          key: \'${! meta("mqtt_topic") }\'\n\
+          value: \'${! content() }\'\n\
+\n\
+  output:\n\
+    mqtt:\n\
+      urls: ["tcp://${MQTT_TARGET_HOST}:${MQTT_TARGET_PORT}"]\n\
+      topic: \'${! meta("mqtt_topic") }\'\n\
+      qos: 1\n\
+\n\
+resources:\n\
+  caches:\n\
+    - label: deadband_cache\n\
+      memory:\n\
+        default_ttl: 30s'},
+  /* Stage 2: Deadband + JSON Schema Validation */
+  {file:'02-deadband-schema.yaml',yaml:'\
+# Stage 2: Deadband + JSON Schema Validation\n\
+name: scada-edge-pipeline\n\
+type: pipeline\n\
+\n\
+config:\n\
+  input:\n\
+    mqtt:\n\
+      urls: ["tcp://${MQTT_SOURCE_HOST}:${MQTT_SOURCE_PORT}"]\n\
+      topics: ["spBv1.0/#"]\n\
+      client_id: "expanso-edge-in"\n\
+\n\
+  pipeline:\n\
+    processors:\n\
+      # --- Deadband: suppress unchanged readings ---\n\
+      - cache:\n\
+          resource: deadband_cache\n\
+          operator: get\n\
+          key: \'${! meta("mqtt_topic") }\'\n\
+      - bloblang: |\n\
+          let prev = if content().length() > 0 { content().parse_json() } else { null }\n\
+          let curr = this\n\
+          let dominated = if $prev != null {\n\
+            $prev.metrics.all(m -> $curr.metrics.exists(\n\
+              c -> c.name == m.name &&\n\
+                   c.type == "Double" &&\n\
+                   (c.value - m.value).abs() < 1.0\n\
+            ))\n\
+          } else { false }\n\
+          root = if $dominated { deleted() } else { $curr }\n\
+      - cache:\n\
+          resource: deadband_cache\n\
+          operator: set\n\
+          key: \'${! meta("mqtt_topic") }\'\n\
+          value: \'${! content() }\'\n\
+\n\
+      # --- JSON Schema: validate payload structure ---\n\
+      - json_schema:\n\
+          schema: |\n\
+            {\n\
+              "type": "object",\n\
+              "required": ["timestamp", "metrics", "seq"],\n\
+              "properties": {\n\
+                "timestamp": { "type": "integer", "minimum": 0 },\n\
+                "seq": { "type": "integer", "minimum": 0 },\n\
+                "metrics": {\n\
+                  "type": "array",\n\
+                  "minItems": 1,\n\
+                  "items": {\n\
+                    "type": "object",\n\
+                    "required": ["name", "type", "value"],\n\
+                    "properties": {\n\
+                      "name": { "type": "string" },\n\
+                      "type": { "enum": ["Double","Boolean","String"] },\n\
+                      "value": {}\n\
+                    }\n\
+                  }\n\
+                }\n\
+              }\n\
+            }\n\
+\n\
+  output:\n\
+    mqtt:\n\
+      urls: ["tcp://${MQTT_TARGET_HOST}:${MQTT_TARGET_PORT}"]\n\
+      topic: \'${! meta("mqtt_topic") }\'\n\
+      qos: 1\n\
+\n\
+resources:\n\
+  caches:\n\
+    - label: deadband_cache\n\
+      memory:\n\
+        default_ttl: 30s'},
+  /* Stage 3: Deadband + Schema + Compression */
+  {file:'03-deadband-schema-compress.yaml',yaml:'\
+# Stage 3: Deadband + Schema + Compression\n\
+name: scada-edge-pipeline\n\
+type: pipeline\n\
+\n\
+config:\n\
+  input:\n\
+    mqtt:\n\
+      urls: ["tcp://${MQTT_SOURCE_HOST}:${MQTT_SOURCE_PORT}"]\n\
+      topics: ["spBv1.0/#"]\n\
+      client_id: "expanso-edge-in"\n\
+\n\
+  pipeline:\n\
+    processors:\n\
+      # --- Deadband: suppress unchanged readings ---\n\
+      - cache:\n\
+          resource: deadband_cache\n\
+          operator: get\n\
+          key: \'${! meta("mqtt_topic") }\'\n\
+      - bloblang: |\n\
+          let prev = if content().length() > 0 { content().parse_json() } else { null }\n\
+          let curr = this\n\
+          let dominated = if $prev != null {\n\
+            $prev.metrics.all(m -> $curr.metrics.exists(\n\
+              c -> c.name == m.name &&\n\
+                   c.type == "Double" &&\n\
+                   (c.value - m.value).abs() < 1.0\n\
+            ))\n\
+          } else { false }\n\
+          root = if $dominated { deleted() } else { $curr }\n\
+      - cache:\n\
+          resource: deadband_cache\n\
+          operator: set\n\
+          key: \'${! meta("mqtt_topic") }\'\n\
+          value: \'${! content() }\'\n\
+\n\
+      # --- JSON Schema: validate payload structure ---\n\
+      - json_schema:\n\
+          schema: |\n\
+            {\n\
+              "type": "object",\n\
+              "required": ["timestamp", "metrics", "seq"],\n\
+              "properties": {\n\
+                "timestamp": { "type": "integer", "minimum": 0 },\n\
+                "seq": { "type": "integer", "minimum": 0 },\n\
+                "metrics": {\n\
+                  "type": "array",\n\
+                  "minItems": 1,\n\
+                  "items": {\n\
+                    "type": "object",\n\
+                    "required": ["name", "type", "value"],\n\
+                    "properties": {\n\
+                      "name": { "type": "string" },\n\
+                      "type": { "enum": ["Double","Boolean","String"] },\n\
+                      "value": {}\n\
+                    }\n\
+                  }\n\
+                }\n\
+              }\n\
+            }\n\
+\n\
+      # --- Compress: gzip payload ---\n\
+      - bloblang: |\n\
+          root = this\n\
+          meta _original_size = content().length()\n\
+      - compress:\n\
+          algorithm: gzip\n\
+      - bloblang: |\n\
+          meta _compressed = "true"\n\
+          meta _ratio = ((1.0 - content().length().number() /\n\
+            meta("_original_size").number()) * 100).round()\n\
+\n\
+  output:\n\
+    mqtt:\n\
+      urls: ["tcp://${MQTT_TARGET_HOST}:${MQTT_TARGET_PORT}"]\n\
+      topic: \'${! meta("mqtt_topic") }\'\n\
+      qos: 1\n\
+\n\
+resources:\n\
+  caches:\n\
+    - label: deadband_cache\n\
+      memory:\n\
+        default_ttl: 30s'},
+  /* Stage 4: Deadband + Schema + Compression + DLQ */
+  {file:'04-full-pipeline.yaml',yaml:'\
+# Stage 4: Full Pipeline (Deadband + Schema + Compress + DLQ)\n\
+name: scada-edge-pipeline\n\
+type: pipeline\n\
+\n\
+config:\n\
+  input:\n\
+    mqtt:\n\
+      urls: ["tcp://${MQTT_SOURCE_HOST}:${MQTT_SOURCE_PORT}"]\n\
+      topics: ["spBv1.0/#"]\n\
+      client_id: "expanso-edge-in"\n\
+\n\
+  pipeline:\n\
+    processors:\n\
+      # --- Deadband: suppress unchanged readings ---\n\
+      - cache:\n\
+          resource: deadband_cache\n\
+          operator: get\n\
+          key: \'${! meta("mqtt_topic") }\'\n\
+      - bloblang: |\n\
+          let prev = if content().length() > 0 { content().parse_json() } else { null }\n\
+          let curr = this\n\
+          let dominated = if $prev != null {\n\
+            $prev.metrics.all(m -> $curr.metrics.exists(\n\
+              c -> c.name == m.name &&\n\
+                   c.type == "Double" &&\n\
+                   (c.value - m.value).abs() < 1.0\n\
+            ))\n\
+          } else { false }\n\
+          root = if $dominated { deleted() } else { $curr }\n\
+      - cache:\n\
+          resource: deadband_cache\n\
+          operator: set\n\
+          key: \'${! meta("mqtt_topic") }\'\n\
+          value: \'${! content() }\'\n\
+\n\
+      # --- JSON Schema: validate payload structure ---\n\
+      - json_schema:\n\
+          schema: |\n\
+            {\n\
+              "type": "object",\n\
+              "required": ["timestamp", "metrics", "seq"],\n\
+              "properties": {\n\
+                "timestamp": { "type": "integer", "minimum": 0 },\n\
+                "seq": { "type": "integer", "minimum": 0 },\n\
+                "metrics": {\n\
+                  "type": "array",\n\
+                  "minItems": 1,\n\
+                  "items": {\n\
+                    "type": "object",\n\
+                    "required": ["name", "type", "value"],\n\
+                    "properties": {\n\
+                      "name": { "type": "string" },\n\
+                      "type": { "enum": ["Double","Boolean","String"] },\n\
+                      "value": {}\n\
+                    }\n\
+                  }\n\
+                }\n\
+              }\n\
+            }\n\
+\n\
+      # --- Compress: gzip payload ---\n\
+      - bloblang: |\n\
+          root = this\n\
+          meta _original_size = content().length()\n\
+      - compress:\n\
+          algorithm: gzip\n\
+      - bloblang: |\n\
+          meta _compressed = "true"\n\
+          meta _ratio = ((1.0 - content().length().number() /\n\
+            meta("_original_size").number()) * 100).round()\n\
+\n\
+  # --- Output: valid → HiveMQ, invalid → DLQ ---\n\
+  output:\n\
+    switch:\n\
+      cases:\n\
+        - check: meta("json_schema_error") == null\n\
+          output:\n\
+            mqtt:\n\
+              urls: ["tcp://${MQTT_TARGET_HOST}:${MQTT_TARGET_PORT}"]\n\
+              topic: \'${! meta("mqtt_topic") }\'\n\
+              qos: 1\n\
+        - output:  # Dead Letter Queue\n\
+            mqtt:\n\
+              urls: ["tcp://${MQTT_TARGET_HOST}:${MQTT_TARGET_PORT}"]\n\
+              topic: \'dlq/${! meta("mqtt_topic") }\'\n\
+              qos: 1\n\
+\n\
+resources:\n\
+  caches:\n\
+    - label: deadband_cache\n\
+      memory:\n\
+        default_ttl: 30s'}
+];
+
+/* Syntax highlight YAML */
+function highlightYaml(raw){
+  var lines=raw.split('\n');
+  var out=[];
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i];
+    /* Escape HTML */
+    line=line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    if(/^\s*#/.test(line)){
+      out.push('<span class="yc">'+line+'</span>');
+    }else{
+      /* Extract quoted strings first, replace with placeholders */
+      var strings=[];
+      line=line.replace(/'([^']*)'/g,function(m,s){
+        strings.push("'"+s+"'");
+        return '\x00S'+strings.length+'\x00';
       });
+      line=line.replace(/"([^"]*)"/g,function(m,s){
+        strings.push('"'+s+'"');
+        return '\x00S'+strings.length+'\x00';
+      });
+      /* Highlight key: value */
+      line=line.replace(/^(\s*)([\w_-]+)(\s*:)/,function(m,sp,k,col){
+        return sp+'<span class="yk">'+k+'</span>'+col;
+      });
+      /* Highlight numbers */
+      line=line.replace(/:\s+(\d+(?:\.\d+)?)\s*$/,function(m,n){
+        return ': <span class="yn">'+n+'</span>';
+      });
+      /* Restore quoted strings with highlighting */
+      line=line.replace(/\x00S(\d+)\x00/g,function(m,idx){
+        var s=strings[parseInt(idx)-1];
+        return '<span class="ys">'+s+'</span>';
+      });
+      out.push(line);
     }
+  }
+  return out.join('\n');
+}
 
-    function renderMessages(messages) {
-      const tbody = document.getElementById("messages");
-      tbody.innerHTML = messages.map((m) => {
-        const st = `st-${m.status}`;
-        return `<tr>
-          <td>${m.metric}</td>
-          <td>${fmt(m.value)}</td>
-          <td>${m.datatype}</td>
-          <td>${m.timestamp}</td>
-          <td>${m.quality}</td>
-          <td class="${st}">${m.status}</td>
-        </tr>`;
-      }).join("");
-    }
+function renderPipelineViewer(){
+  var level=currentLevel();
+  var section=document.getElementById('pv-section');
+  var body=document.getElementById('pv-body');
+  var tabs=document.getElementById('pv-tabs');
+  var fname=document.getElementById('pv-filename');
 
-    async function poll() {
-      const [metricsResp, parallelResp] = await Promise.all([
-        fetch("/api/metrics"),
-        fetch("/api-parallel/metrics")
-      ]);
-      const metrics = await metricsResp.json();
-      const parallelMetrics = await parallelResp.json();
+  section.style.display='';
+  tabs.innerHTML=''; /* no tabs — single auto-updating view */
 
-      Object.assign(state, metrics.current_features_enabled || {});
-      renderToggles();
+  if(level===0){
+    fname.textContent='';
+    body.innerHTML='<div class="pv-empty">Enable a feature above to see the Expanso Edge pipeline configuration</div>';
+    return;
+  }
 
-      makeStats(document.getElementById("panel-a-stats"), [
-        ["Messages In", metrics.messages_in],
-        ["Bytes In", metrics.bytes_in],
-        ["Messages Dropped", metrics.messages_dropped],
-        ["Validation Failures", metrics.validation_failures],
-        ["Rate In (msg/s)", metrics.messages_in_rate || 0],
-        ["Rate Out (msg/s)", metrics.messages_out_rate || 0],
-      ]);
+  var p=PIPELINES[level];
+  fname.textContent='pipelines/'+p.file;
+  body.innerHTML='';
+  var codeDiv=document.createElement('div');
+  codeDiv.className='pv-code';
+  var pre=document.createElement('pre');
+  pre.innerHTML=highlightYaml(p.yaml);
+  codeDiv.appendChild(pre);
+  body.appendChild(codeDiv);
+}
 
-      makeStats(document.getElementById("panel-b-stats"), [
-        ["Messages Out", metrics.messages_out],
-        ["Bytes Out", metrics.bytes_out],
-        ["Saved %", `${metrics.bytes_saved_pct}%`],
-        ["Deadband", state.deadband],
-        ["Schema", state.schema],
-        ["Compression", state.compression],
-      ]);
-
-      makeStats(document.getElementById("panel-c-stats"), [
-        ["Parallel In", parallelMetrics.messages_in],
-        ["Parallel Out", parallelMetrics.messages_out],
-        ["Fan-Out", parallelMetrics.current_features_enabled?.fanout ?? false],
-        ["Archive Topic", (parallelMetrics.current_features_enabled?.fanout ?? false) ? "ACTIVE" : "OFF"],
-        ["Broker", "HiveMQ websocket :8000"],
-        ["Topic", "parallel/spBv1.0 -> spBv1.0"],
-      ]);
-
-      const inB = Math.max(1, metrics.bytes_in || 1);
-      const outB = Math.max(1, metrics.bytes_out || 1);
-      const max = Math.max(inB, outB);
-      document.getElementById("bar-in").style.height = `${Math.round((inB / max) * 100)}%`;
-      document.getElementById("bar-out").style.height = `${Math.round((outB / max) * 100)}%`;
-
-      const msgResp = await fetch("/api/messages");
-      const msgData = await msgResp.json();
-      renderMessages(msgData.messages || []);
-    }
-
-    renderToggles();
-    poll().catch(() => {});
-    setInterval(() => poll().catch(() => {}), 2000);
-  </script>
+render();
+</script>
 </body>
 </html>

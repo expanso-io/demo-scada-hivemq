@@ -1,102 +1,40 @@
 services:
-  scada-sim:
-    build:
-      context: .
-      dockerfile: scada-sim/Dockerfile
-    container_name: scada-sim
-    environment:
-      OPC_ENDPOINT: opc.tcp://0.0.0.0:4840/freeopcua/server/
-      MQTT_HOST: mqtt-source
-      MQTT_PORT: 1883
-      SPARKPLUG_TOPIC: spBv1.0/Expanso/DDATA/edge1/sensors
-      PARALLEL_SPARKPLUG_TOPIC: parallel/spBv1.0/Expanso/DDATA/edge1/sensors
-      ENABLE_DIRECT_SPARKPLUG: "true"
-      ENABLE_PARALLEL_FEED: "true"
-    ports:
-      - "4840:4840"
-    networks:
-      - scada-net
-
-  mqtt-source:
-    image: eclipse-mosquitto:2.0
-    container_name: mqtt-source
-    volumes:
-      - ./mqtt-source/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    ports:
-      - "1884:1883"
-    networks:
-      - scada-net
-
-  expanso-edge:
-    build:
-      context: .
-      dockerfile: expanso-edge/Dockerfile
-    container_name: expanso-edge
-    depends_on:
-      - mqtt-source
-      - mqtt-broker
-    environment:
-      MQTT_SOURCE_HOST: mqtt-source
-      MQTT_SOURCE_PORT: 1883
-      MQTT_TARGET_HOST: mqtt-broker
-      MQTT_TARGET_PORT: 1883
-      MQTT_SUB_TOPIC: spBv1.0/#
-      ENABLE_DEADBAND: "false"
-      ENABLE_SCHEMA_VALIDATION: "false"
-      ENABLE_COMPRESSION: "false"
-      ENABLE_FANOUT: "false"
-    ports:
-      - "8080:8080"
-    networks:
-      - scada-net
-
-  expanso-edge-parallel:
-    build:
-      context: .
-      dockerfile: expanso-edge/Dockerfile
-    container_name: expanso-edge-parallel
-    depends_on:
-      - mqtt-source
-      - mqtt-broker
-    environment:
-      MQTT_SOURCE_HOST: mqtt-source
-      MQTT_SOURCE_PORT: 1883
-      MQTT_TARGET_HOST: mqtt-broker
-      MQTT_TARGET_PORT: 1883
-      MQTT_SUB_TOPIC: parallel/spBv1.0/#
-      TOPIC_PREFIX_STRIP: parallel/
-      ENABLE_DEADBAND: "false"
-      ENABLE_SCHEMA_VALIDATION: "false"
-      ENABLE_COMPRESSION: "false"
-      ENABLE_FANOUT: "false"
-    networks:
-      - scada-net
-
+  # HiveMQ Community Edition (MQTT broker + websocket for dashboard)
   mqtt-broker:
-    image: hivemq/hivemq4:4.32.0
+    image: hivemq/hivemq-ce:latest
     container_name: mqtt-broker
     volumes:
-      - ./hivemq/conf/config.xml:/opt/hivemq/conf/config.xml:ro
+      - ./hivemq/config.xml:/opt/hivemq/conf/config.xml:ro
     ports:
-      - "1883:1883"
-      - "8000:8000"
-    networks:
-      - scada-net
+      - "8001:8000"    # websocket for browser dashboard (8001 to avoid conflicts)
+      - "1883:1883"    # MQTT for scada-sim and local testing
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/1883'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
 
+  # SCADA simulator — generates telemetry for 4 industrial sites
+  scada-sim:
+    build: ./scada-sim
+    container_name: scada-sim
+    environment:
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - PUBLISH_INTERVAL=0.33
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
+
+  # Dashboard (nginx serving static HTML)
   dashboard:
     image: nginx:1.27-alpine
     container_name: dashboard
-    depends_on:
-      - expanso-edge
-      - expanso-edge-parallel
     volumes:
       - ./dashboard/index.html:/usr/share/nginx/html/index.html:ro
       - ./dashboard/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8888:80"
-    networks:
-      - scada-net
-
-networks:
-  scada-net:
-    driver: bridge
+    depends_on:
+      - mqtt-broker
