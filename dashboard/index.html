@@ -4,9 +4,6 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>SCADA &rarr; Expanso Edge &rarr; HiveMQ</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
 :root{
   --bg:#060e1a;--bg2:#0c1829;
@@ -33,7 +30,7 @@ body{
 .hdr h1{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--sub)}
 .hdr h1 b{color:var(--teal)}
 .hdr .live{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--sub)}
-.hdr .dot{width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 2s infinite}
+.hdr .dot{width:7px;height:7px;border-radius: 50%;background:var(--good);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 
 /* ── Hero text ── */
@@ -47,21 +44,21 @@ body{
 .ctrl-label{font-family:'Barlow Condensed',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);font-weight:600;margin-right:4px}
 .tbtn{
   display:flex;align-items:center;gap:6px;
-  padding:7px 14px;border:1.5px solid var(--border-bright);border-radius:6px;
+  padding:7px 14px;border:1.5px solid var(--border-bright);border-radius: 4px;
   background:transparent;color:var(--sub);
   font-family:'Barlow',sans-serif;font-size:13px;font-weight:600;
   cursor:pointer;transition:all .25s;
 }
 .tbtn:hover{border-color:rgba(54,209,196,.4);color:var(--ink)}
 .tbtn.on{background:var(--teal-dim);border-color:rgba(54,209,196,.6);color:var(--teal)}
-.tbtn .ind{width:6px;height:6px;border-radius:50%;background:var(--dim);transition:all .25s}
+.tbtn .ind{width:6px;height:6px;border-radius: 50%;background:var(--dim);transition:all .25s}
 .tbtn.on .ind{background:var(--teal);box-shadow:0 0 6px var(--teal-gl)}
 
 /* ── Stage description ── */
 .stage{padding:16px 40px 0;max-width:720px}
 .stage-box{
   padding:12px 18px;border-left:3px solid var(--teal);
-  background:var(--teal-dim);border-radius:0 8px 8px 0;
+  background:var(--teal-dim);border-radius: 0 8px 8px 0;
 }
 .stage-box .st{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:var(--teal);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
 .stage-box .sd{font-size:13px;color:var(--sub);line-height:1.55}
@@ -142,7 +139,7 @@ svg .t-feat.on{fill:var(--teal)}
 .mc{
   flex:1;min-width:120px;
   padding:14px 12px;background:var(--surface2);border:1px solid var(--border-bright);
-  border-radius:8px;text-align:center;
+  border-radius: 8px;text-align:center;
 }
 .mc .mv{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;line-height:1.1;margin-bottom:3px;color:var(--ink)}
 .mc .ml{font-family:'Barlow Condensed',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--sub);font-weight:600}
@@ -153,12 +150,12 @@ svg .t-feat.on{fill:var(--teal)}
 .log-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .log-hd span{font-family:'Barlow Condensed',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--sub);font-weight:600}
 .log-hd .lc{font-family:'JetBrains Mono',monospace;text-transform:none;letter-spacing:0;font-size:11px}
-.lw{background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;overflow:hidden}
+.lw{background:var(--surface2);border:1px solid var(--border-bright);border-radius: 8px;overflow:hidden}
 table.lt{width:100%;border-collapse:collapse}
 .lt th{padding:7px 10px;text-align:left;font-family:'Barlow Condensed',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);font-weight:600;background:rgba(255,255,255,.04);border-bottom:1px solid var(--border)}
 .lt td{padding:6px 10px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.05);font-family:'JetBrains Mono',monospace;color:var(--ink)}
 .lt tr:last-child td{border-bottom:none}
-.sb{display:inline-block;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:600;text-transform:uppercase;font-family:'Barlow Condensed',sans-serif;letter-spacing:.04em}
+.sb{display:inline-block;padding:2px 6px;border-radius: 2px;font-size:9px;font-weight:600;text-transform:uppercase;font-family:'Barlow Condensed',sans-serif;letter-spacing:.04em}
 .sb.passed{background:rgba(74,222,128,.15);color:var(--good)}
 .sb.dropped{background:rgba(248,113,113,.15);color:var(--bad)}
 .sb.invalid{background:rgba(248,113,113,.15);color:var(--bad)}
@@ -176,7 +173,7 @@ table.lt{width:100%;border-collapse:collapse}
 .pv-header .pv-file{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--teal)}
 .pv-tabs{display:flex;gap:2px;margin-bottom:8px}
 .pv-tab{
-  padding:5px 12px;border:1px solid var(--border);border-radius:5px 5px 0 0;
+  padding:5px 12px;border:1px solid var(--border);border-radius: 4px 4px 0 0;
   background:transparent;color:var(--dim);
   font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;
   text-transform:uppercase;letter-spacing:.06em;
@@ -185,7 +182,7 @@ table.lt{width:100%;border-collapse:collapse}
 .pv-tab:hover{color:var(--sub)}
 .pv-tab.active{background:var(--surface2);color:var(--teal);border-color:var(--teal)}
 .pv-code{
-  background:rgba(0,0,0,.4);border:1px solid var(--border-bright);border-radius:0 8px 8px 8px;
+  background:rgba(0,0,0,.4);border:1px solid var(--border-bright);border-radius: 0 8px 8px 8px;
   padding:16px 20px;overflow-x:auto;overflow-y:hidden;flex:1;
 }
 .pv-code pre{
@@ -199,7 +196,7 @@ table.lt{width:100%;border-collapse:collapse}
 .pv-code pre .yn{color:#bd93f9}
 .pv-empty{
   flex:1;display:flex;align-items:center;justify-content:center;
-  background:rgba(255,255,255,.03);border:2px dashed var(--mute);border-radius:8px;
+  background:rgba(255,255,255,.03);border:2px dashed var(--mute);border-radius: 8px;
   color:var(--dim);font-size:22px;font-weight:500;text-align:center;
   padding:40px;line-height:1.4;
 }
@@ -215,6 +212,7 @@ table.lt{width:100%;border-collapse:collapse}
 }
 .lt tr.new-row{animation:logSlideIn .2s ease-out}
 </style>
+<link rel="stylesheet" href="fonts/fonts.css">
 </head>
 <body>
 
