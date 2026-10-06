@@ -1,113 +1,165 @@
-# SCADA → Expanso Edge → HiveMQ Live Demo
-## Quick Start
+# SCADA to HiveMQ through Expanso Edge
 
-1. Copy `.env.example` to `.env` and fill in your cluster details:
-   ```
-   cp .env.example .env
-   # edit .env with your EXPANSO_CLUSTER_ID
-   ```
-2. Run the demo:
-   ```
-   ./run-demo.sh
-   ```
-3. Open **http://localhost:8888**
+This repository runs a complete Sparkplug B pipeline between a private MQTT
+source broker and HiveMQ. Expanso Edge decodes the protobuf payload, checks the
+topic and metric schema, applies stateful deadbands, re-encodes the remaining
+metrics, and fans them out to primary, archive, and metrics topics. Invalid
+readings go to quarantine.
 
-To stop: `./stop-demo.sh`
-
----
-
-
-Built off of potential user requirements for SCADA HiveMQ MQTT streaming and industrial telemetry pipelines, this self-contained Docker Compose demo shows how Expanso Edge sits between an upstream Sparkplug publisher (via OPC-UA) and HiveMQ, with runtime toggles for dead-banding, schema validation, compression, and fan-out.
+The bounded fixture has three records. The first establishes deadband state,
+the second keeps only `DoorSensor`, and the third is quarantined because its
+temperature is `999.0`.
 
 ## Architecture
 
 ```text
-                    (primary path)
-+----------------+      +----------------------+      +------------------+      +----------------+
-| SCADA Simulator| ---> | MQTT Source Broker  | ---> | Expanso Edge     | ---> | HiveMQ         |
-| asyncua OPC-UA |      | (Mosquitto)         |      | (policy pipeline)|      | (final broker) |
-+--------+-------+      +----------+-----------+      +--------+---------+      +--------+-------+
-         |                         ^                           |                         |
-         | OPC-UA                  | Sparkplug B              | archive/spBv1.0/#        | websocket
-         v                         |                           v                         v
-+----------------+                 |                   +------------------+      +----------------+
-| Ignition Edge  |-----------------+                   | Expanso Parallel |----> | Dashboard      |
-| Trial Gateway  |  provisioning assets               | bypass path       |      | (nginx static) |
-+----------------+                                     +------------------+      +----------------+
+fixture publisher
+      |
+      | Sparkplug B protobuf, MQTT 3.1.1, authenticated
+      v
+Mosquitto source broker
+      |
+      v
+Expanso Edge v2.1.21
+      |-- decode and validate
+      |-- stateful deadband
+      |-- protobuf re-encode
+      |
+      | MQTT over TLS 1.2+, authenticated
+      v
+HiveMQ
+      |-- spBv1.0/#          Sparkplug B protobuf
+      |-- archive/#          gzip Sparkplug B protobuf
+      |-- metrics/#          JSON summary
+      `-- quarantine/#       JSON rejection record
 ```
 
-## Services
+Docker Compose pins every image by tag and digest. Both brokers use generated
+runtime credentials. HiveMQ exposes only its TLS listener, persists broker data
+in named volumes, drops Linux capabilities, and uses the file RBAC extension.
+The source broker is confined to the internal data-plane network.
 
-- `scada-sim`: real OPC-UA server (`asyncua`) with 100ms updates.
-- `ignition-edge`: official `inductiveautomation/ignition` image (trial mode) with mounted provisioning files.
-- `mqtt-source`: Mosquitto broker for upstream Sparkplug input.
-- `expanso-edge`: in-line Expanso pipeline (`spBv1.0/#` -> HiveMQ).
-- `expanso-edge-parallel`: parallel Expanso pipeline (`parallel/spBv1.0/#` -> HiveMQ).
-- `mqtt-broker`: HiveMQ Community (`1883` + websocket `8000`).
-- `dashboard`: single-file web UI on `http://localhost:8888`.
+## Pipeline explorer
 
-## Quickstart
+The dashboard follows the same six stages as
+[`pipelines/scada-hivemq.yaml`](pipelines/scada-hivemq.yaml):
+
+1. authenticated MQTT ingest;
+2. Sparkplug B protobuf decode;
+3. topic, datatype, metric, and value checks;
+4. stateful temperature and pressure deadbands;
+5. Sparkplug B protobuf re-encode;
+6. authenticated TLS fan-out to HiveMQ.
+
+Each stage shows the real fixture input, output, and matching lines from the
+shipped pipeline. The page fetches
+[`fixtures/stages.json`](fixtures/stages.json) and the pipeline file at runtime,
+so it does not carry an embedded copy of the YAML. Use Left and Right to page
+stages without moving the page. Light mode is the default; the header includes
+an explicit dark-mode toggle.
+
+## Run the local proof lane
+
+Requirements:
+
+- Docker Desktop with Compose;
+- `curl` on the host;
+- ports `8883` and `8888` available.
+
+Run:
 
 ```bash
-docker compose up --build
+./run-demo.sh
 ```
 
-Endpoints:
-- Dashboard: `http://localhost:8888`
-- Expanso metrics API: `http://localhost:8080/metrics`
-- Ignition Edge UI: `http://localhost:8088`
-- HiveMQ TCP: `localhost:1883`
-- HiveMQ websocket: `ws://localhost:8000/mqtt`
-- SCADA OPC-UA endpoint: `opc.tcp://localhost:4840/freeopcua/server/`
+The script resets the local containers, starts both brokers and Expanso Edge,
+deploys the pipeline through the local Edge API, and replays the three fixture
+records. It exits only after the verifier observes:
 
-## Progressive Demo Flow
+- 2 primary Sparkplug B records;
+- 2 gzip archive records;
+- 2 JSON metrics records;
+- 1 quarantine record;
+- only `DoorSensor` in the second primary record;
+- a successful authenticated TLS connection to HiveMQ;
+- a rejected anonymous TLS connection.
 
-### a) Default Flow (Panel A)
-1. Open dashboard.
-2. Keep all feature toggles OFF.
-3. Observe raw ingest/out rates, bytes, and decoded Sparkplug metrics.
+Open <http://127.0.0.1:8888> after the command passes. Stop the stack with:
 
-### b) Expanso In-Line (Panel B)
-1. Toggle features one by one.
-2. Watch immediate impact in dropped counts, validation failures, and byte savings.
-3. Review message table status colors:
-- green: passed
-- red: dropped/invalid
-- yellow: compressed
-
-### c) Expanso Parallel (Panel C)
-1. Enable the same toggles.
-2. Compare the parallel path counters to the in-line path.
-3. Confirm bypass route (`parallel/spBv1.0/#`) is independently processed.
-
-## Feature Toggles
-
-Runtime API:
-
-```http
-POST /config
-Content-Type: application/json
-
-{"deadband": true, "schema": true, "compression": true, "fanout": true}
+```bash
+./stop-demo.sh
 ```
 
-Behavior:
-- `deadband`: drops `Temperature` deltas `< 1.0 C` and `Pressure` deltas `< 0.5`.
-- `schema`: rejects `DoorSensor` not in `{0,1}` and `Temperature` outside `[-40,150]`.
-- `compression`: gzip compresses outgoing Sparkplug payload bytes, tracks savings.
-- `fanout`: forwards to HiveMQ and `archive/spBv1.0/#`.
+`stop-demo.sh` affects only the local Compose project. It does not delete Cloud
+jobs or broker volumes.
 
-## Sparkplug B Assets
+The optional continuous OPC UA source and Sparkplug publisher is separate from
+the bounded acceptance lane:
 
-- `sparkplug_b.proto` is included at repo root.
-- `sparkplug_b_pb2.py` is generated during Docker build via `grpcio-tools`.
-- Expanso decodes/re-encodes protobuf payloads and exposes decoded metrics via `/messages`.
+```bash
+just live
+```
 
-## Ignition Edge Provisioning
+It publishes changing temperature, pressure, and door readings after the
+fixture acceptance has passed.
 
-Provisioning artifacts are in `ignition-edge/provisioning/`:
-- `gateway-init.env`
-- `opcua-mqtt-mapping.json`
-- `README.md`
+## Verify the repository
 
-The stack is live without manual commissioning (using deterministic Sparkplug feed), while keeping official Ignition Edge running for full trial setup and extension.
+Run the full local gate:
+
+```bash
+just check
+```
+
+`just check` validates the Expanso job, Compose configuration, XML, shell and
+JavaScript, explorer fixtures, rendered page behavior, and the secured runtime
+acceptance. `just static-check` omits browsers and containers when only a fast
+source check is needed.
+
+The dated acceptance report is committed at
+[`docs/verification/2026-10-05-public-bar.md`](docs/verification/2026-10-05-public-bar.md).
+
+## Deploy with Expanso Cloud
+
+Production execution is Cloud-managed. Prepare an Expanso Edge node with the
+label `demo=scada-hivemq`, then give that node network access to the source and
+destination brokers. Its runtime environment must define:
+
+| Variable | Required value |
+| --- | --- |
+| `SOURCE_MQTT_URL` | MQTT URL for the authenticated source broker |
+| `SOURCE_MQTT_USER` | source username |
+| `SOURCE_MQTT_PASSWORD` | source password from the node secret store |
+| `HIVEMQ_URL` | TLS MQTT URL for HiveMQ |
+| `HIVEMQ_USER` | HiveMQ publisher username |
+| `HIVEMQ_PASSWORD` | HiveMQ password from the node secret store |
+| `HIVEMQ_CA_FILE` | mounted CA certificate path |
+
+Do not put passwords or bootstrap tokens in the repository. Authenticate
+`expanso-cli` with its normal profile, then deploy:
+
+Run the target Edge service with a working directory that contains the shipped
+`sparkplug_b.proto` file. The local container mounts it at `/schemas` and uses
+that directory as its working directory.
+
+```bash
+just cloud-deploy
+```
+
+Deployment acceptance and workload execution are separate states. Confirm the
+assigned execution before reporting that the production job is running:
+
+```bash
+expanso-cli execution list --job scada-hivemq
+```
+
+The Compose acceptance lane proves the same processing config without Cloud
+credentials. It is not evidence of a Cloud execution.
+
+## Ignition provisioning assets
+
+Commits `919390c` and `5477d01` removed the uncommissioned Ignition container
+and its dashboard references. The current stack publishes Sparkplug B directly
+from the in-repository OPC UA simulator, so the pipeline runs without a trial
+gateway. The files under `ignition-edge/provisioning/` remain as optional
+mapping references; Compose does not claim to provision or run Ignition.

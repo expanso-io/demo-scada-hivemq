@@ -3,10 +3,10 @@ name: demo-scada-hivemq
 services:
   auth-init:
     image: eclipse-mosquitto:2.0.22@sha256:199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21
-    user: "0:0"
+    user: "${DEMO_HOST_UID:-1000}:${DEMO_HOST_GID:-1000}"
     entrypoint: ["/bin/sh", "/scripts/init-auth.sh"]
     volumes:
-      - demo-secrets:/run/demo-secrets
+      - ./.runtime/secrets:/run/demo-secrets
       - ./scripts/init-auth.sh:/scripts/init-auth.sh:ro
     read_only: true
     tmpfs:
@@ -17,10 +17,10 @@ services:
 
   tls-init:
     image: hivemq/hivemq-ce:2025.5@sha256:7ae39e84654a41ced6e946dd84f131d508bc2b862ec96265b7f23d241db214da
-    user: "0:0"
+    user: "${DEMO_HOST_UID:-1000}:${DEMO_HOST_GID:-1000}"
     entrypoint: ["/bin/bash", "/scripts/init-tls.sh"]
     volumes:
-      - hivemq-tls:/run/hivemq-tls
+      - ./.runtime/tls:/run/hivemq-tls
       - ./scripts/init-tls.sh:/scripts/init-tls.sh:ro
     read_only: true
     tmpfs:
@@ -41,14 +41,16 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./mqtt-source/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - demo-secrets:/run/demo-secrets:ro
       - mqtt-source-data:/mosquitto/data
+    secrets:
+      - source-password
+      - source-passwords
     healthcheck:
       test:
         - CMD-SHELL
         - >-
           mosquitto_pub -h 127.0.0.1 -u source-publisher
-          -P "$$(cat /run/demo-secrets/source-password)"
+          -P "$$(cat /run/secrets/source-password)"
           -t health/source -m ready -q 1
       interval: 3s
       timeout: 2s
@@ -70,12 +72,14 @@ services:
         condition: service_completed_successfully
       tls-init:
         condition: service_completed_successfully
+    user: "10000:0"
     volumes:
       - ./hivemq/config.xml:/opt/hivemq/conf/config.xml:ro
-      - demo-secrets:/run/demo-secrets:ro
-      - hivemq-tls:/run/hivemq-tls:ro
+      - ./.runtime/tls:/run/hivemq-tls:ro
       - hivemq-data:/opt/hivemq/data
       - hivemq-log:/opt/hivemq/log
+    secrets:
+      - hivemq-credentials.xml
     ports:
       - "8883:8883"
     healthcheck:
@@ -98,15 +102,22 @@ services:
       mqtt-broker:
         condition: service_healthy
     entrypoint: ["/bin/sh", "/scripts/run-local-edge.sh"]
+    user: "65532:65532"
+    working_dir: /schemas
     environment:
+      SOURCE_MQTT_URL: tcp://mqtt-source:1883
       SOURCE_MQTT_USER: source-publisher
+      HIVEMQ_URL: tcp://mqtt-broker:8883
       HIVEMQ_USER: expanso-edge
+      HIVEMQ_CA_FILE: /run/hivemq-tls/ca.crt
     volumes:
       - ./scripts/run-local-edge.sh:/scripts/run-local-edge.sh:ro
       - ./sparkplug_b.proto:/schemas/sparkplug_b.proto:ro
-      - demo-secrets:/run/demo-secrets:ro
-      - hivemq-tls:/run/hivemq-tls:ro
+      - ./.runtime/tls:/run/hivemq-tls:ro
       - expanso-data:/var/lib/expanso
+    secrets:
+      - source-password
+      - hivemq-password
     read_only: true
     tmpfs:
       - /tmp:size=32m,mode=1777
@@ -120,6 +131,7 @@ services:
       expanso-edge:
         condition: service_started
     entrypoint: ["/bin/sh", "/scripts/deploy-local-pipeline.sh"]
+    user: "65532:65532"
     volumes:
       - ./pipelines/scada-hivemq.yaml:/pipelines/scada-hivemq.yaml:ro
       - ./scripts/deploy-local-pipeline.sh:/scripts/deploy-local-pipeline.sh:ro
@@ -139,6 +151,7 @@ services:
       pipeline-loader:
         condition: service_completed_successfully
     entrypoint: ["/bin/sh", "/scripts/run-scada-sim.sh"]
+    user: "65532:65532"
     environment:
       MQTT_HOST: mqtt-source
       MQTT_PORT: "1883"
@@ -147,43 +160,89 @@ services:
       UPDATE_INTERVAL_SEC: "0.25"
     volumes:
       - ./scripts/run-scada-sim.sh:/scripts/run-scada-sim.sh:ro
-      - demo-secrets:/run/demo-secrets:ro
+    secrets:
+      - source-password
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
     networks: [data-plane]
+    profiles: ["live"]
+
+  fixture-check:
+    build:
+      context: .
+      dockerfile: scada-sim/Dockerfile
+    depends_on:
+      pipeline-loader:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        exec uv run --active --no-sync
+        /scripts/verify_fixture.py
+    user: "${DEMO_HOST_UID:-1000}:${DEMO_HOST_GID:-1000}"
+    environment:
+      SOURCE_MQTT_USER: source-publisher
+      HIVEMQ_USER: fixture-observer
+      RESULT_PATH: /runtime/acceptance.json
+    volumes:
+      - ./scripts/verify_fixture.py:/scripts/verify_fixture.py:ro
+      - ./fixtures:/fixtures:ro
+      - ./.runtime/tls:/run/hivemq-tls:ro
+      - ./.runtime/results:/runtime
+    secrets:
+      - source-password
+      - hivemq-observer-password
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [data-plane]
+    profiles: ["verify"]
 
   dashboard:
     image: nginx:1.27.5-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
     depends_on:
       pipeline-loader:
         condition: service_completed_successfully
+    user: "101:101"
     volumes:
-      - ./dashboard/index.html:/usr/share/nginx/html/index.html:ro
+      - ./dashboard:/usr/share/nginx/html:ro
       - ./dashboard/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./dashboard/fonts:/usr/share/nginx/html/fonts:ro
       - ./fixtures:/usr/share/nginx/html/fixtures:ro
       - ./pipelines:/usr/share/nginx/html/pipelines:ro
     ports:
       - "8888:8080"
     read_only: true
     tmpfs:
-      - /var/cache/nginx:size=16m,mode=0775
-      - /var/run:size=4m,mode=0775
+      - /var/cache/nginx:size=16m,mode=1777
+      - /var/run:size=4m,mode=1777
       - /tmp:size=8m,mode=1777
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
     networks: [presentation]
 
 volumes:
-  demo-secrets:
   expanso-data:
   hivemq-data:
   hivemq-log:
-  hivemq-tls:
   mqtt-source-data:
+
+secrets:
+  source-password:
+    file: ./.runtime/secrets/source-password
+  source-passwords:
+    file: ./.runtime/secrets/source-passwords
+  hivemq-password:
+    file: ./.runtime/secrets/hivemq-password
+  hivemq-observer-password:
+    file: ./.runtime/secrets/hivemq-observer-password
+  hivemq-credentials.xml:
+    file: ./.runtime/secrets/hivemq-credentials.xml
 
 networks:
   data-plane:

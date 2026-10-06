@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "features": [
+    {
+      "id": "secured-sparkplug-pipeline",
+      "description": "Decode, validate, deadband, re-encode, and fan out Sparkplug B through Expanso Edge"
+    },
+    {
+      "id": "fixture-backed-explorer",
+      "description": "Inspect real input, output, and shipped YAML for six stages"
+    },
+    {
+      "id": "animated-topology",
+      "description": "Show source, Cloud control, Edge processing, and HiveMQ data flow"
+    },
+    {
+      "id": "bounded-output-proof",
+      "description": "Verify primary, archive, metrics, quarantine, TLS, and authentication outcomes"
+    },
+    {
+      "id": "ignition-runtime-replacement",
+      "description": "Preserve the OPC UA to Sparkplug behavior removed with Ignition in commits 919390c and 5477d01 through the direct publisher"
+    }
+  ],
+  "routes": [
+    {"id": "home", "path": "/dashboard/"}
+  ],
+  "controls": [
+    {"id": "theme-toggle", "selector": "#theme-toggle"},
+    {"id": "previous-stage", "selector": "#previous-stage"},
+    {"id": "next-stage", "selector": "#next-stage"},
+    {"id": "copy-stage-input", "selector": "[data-copy-target='stage-input']"},
+    {"id": "copy-stage-output", "selector": "[data-copy-target='stage-output']"},
+    {"id": "copy-stage-yaml", "selector": "[data-copy-target='stage-yaml']"},
+    {"id": "copy-run-command", "selector": "[data-copy-target='run-command']"},
+    {"id": "copy-check-command", "selector": "[data-copy-target='check-command']"},
+    {"id": "copy-deploy-command", "selector": "[data-copy-target='deploy-command']"}
+  ],
+  "downloads": [
+    {"id": "download-stage-records", "selector": "#download-fixture"},
+    {"id": "download-pipeline", "selector": "#download-pipeline"}
+  ],
+  "browser_assertions": [
+    {
+      "id": "stage-keyboard-paging",
+      "description": "Left and Right page stages without moving the scroll anchor"
+    },
+    {
+      "id": "light-dark-themes",
+      "description": "Light loads by default and the explicit toggle enables dark mode"
+    },
+    {
+      "id": "responsive-widths",
+      "description": "No horizontal overflow at 320, 400, 768, or 1440 pixels"
+    },
+    {
+      "id": "local-action-feedback",
+      "description": "Every copy and download shows local success and forced-failure feedback"
+    }
+  ]
+}

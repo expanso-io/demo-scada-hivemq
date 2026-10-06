@@ -1,58 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Load .env if present
-if [ -f .env ]; then
-  set -a
-  source .env
-  set +a
-fi
+repo_dir=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+cd "$repo_dir"
 
-echo "▶ Starting local services..."
+command -v docker >/dev/null 2>&1 || {
+  echo "docker is required" >&2
+  exit 1
+}
+
+export DEMO_HOST_UID
+DEMO_HOST_UID=$(id -u)
+export DEMO_HOST_GID
+DEMO_HOST_GID=$(id -g)
+
+install -d -m 0700 .runtime/results .runtime/secrets
+install -d -m 0755 .runtime/tls
+for secret_file in \
+  source-password \
+  source-passwords \
+  hivemq-password \
+  hivemq-observer-password \
+  hivemq-credentials.xml; do
+  if [[ ! -e ".runtime/secrets/$secret_file" ]]; then
+    : > ".runtime/secrets/$secret_file"
+  fi
+  chmod 0600 ".runtime/secrets/$secret_file"
+done
+
+echo "Resetting the local fixture lane..."
+docker compose down --remove-orphans
 docker compose up -d --build
 
-echo "▶ Waiting for dashboard (http://localhost:8888)..."
-for i in $(seq 1 30); do
-  if curl -sf http://localhost:8888 >/dev/null 2>&1; then
-    echo "  Dashboard is up."
+echo "Waiting for the localhost dashboard..."
+dashboard_ready=false
+for _ in $(seq 1 60); do
+  if curl --fail --silent --show-error \
+    http://127.0.0.1:8888/ >/dev/null 2>&1; then
+    dashboard_ready=true
     break
   fi
   sleep 1
 done
 
-# Optionally deploy pipelines to Expanso Cloud cluster
-if [ -n "${EXPANSO_CLI_ENDPOINT:-}" ] \
-  && [ -n "${EXPANSO_CLUSTER_ID:-}" ] \
-  && command -v expanso-cli &>/dev/null; then
-  echo "▶ Deploying pipelines to cluster: $EXPANSO_CLUSTER_ID"
-  for f in pipelines/0*.yaml; do
-    tmp=$(mktemp /tmp/expanso-pipeline.XXXXXX.yaml)
-    sed "s/\${EXPANSO_CLUSTER_ID}/$EXPANSO_CLUSTER_ID/g" \
-      "$f" > "$tmp"
-    deploy_output=$(\
-      EXPANSO_CLI_ENDPOINT="$EXPANSO_CLI_ENDPOINT" \
-      expanso-cli job deploy "$tmp" 2>&1) \
-      && deploy_status=0 || deploy_status=$?
-    if [ "$deploy_status" -eq 0 ]; then
-      echo "  Deployed: $f"
-    elif printf '%s' "$deploy_output" \
-      | grep -q "NO_CHANGES_DETECTED"; then
-      echo "  Unchanged: $f"
-    else
-      printf '%s\n' "$deploy_output"
-      echo "  WARN: Failed to deploy $f"
-    fi
-    rm "$tmp"
-  done
-else
-  echo "▶ Skipping cloud pipeline deployment."
-  echo "  Set EXPANSO_CLI_ENDPOINT, EXPANSO_CLUSTER_ID,"
-  echo "  and install expanso-cli to deploy pipelines."
+if [[ "$dashboard_ready" != true ]]; then
+  echo "dashboard did not become ready" >&2
+  docker compose ps
+  exit 1
 fi
 
-echo ""
-echo "✅ Demo running at http://localhost:8888"
-if [ -n "${EXPANSO_CLUSTER_ID:-}" ]; then
-  echo "   Cluster target: $EXPANSO_CLUSTER_ID"
-fi
-echo "   Run ./stop-demo.sh to tear down."
+echo "Replaying three Sparkplug B records through Expanso Edge..."
+docker compose --profile verify run --rm fixture-check
+
+echo
+echo "Local acceptance passed."
+echo "Dashboard: http://127.0.0.1:8888"
+echo "Stop the stack with ./stop-demo.sh"

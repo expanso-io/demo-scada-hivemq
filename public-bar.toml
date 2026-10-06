@@ -1,0 +1,173 @@
+version = 1
+
+[repository]
+name = "demo-scada-hivemq"
+published = true
+
+[web]
+document = "dashboard/index.html"
+explanation_selector = ".explanation"
+explorer_selector = "#explorer"
+run_selector = "#run"
+deploy_selector = "#deploy"
+
+[browser]
+url = "http://127.0.0.1:8877/dashboard/"
+ready_url = "http://127.0.0.1:8877/dashboard/"
+start_command = ["uv", "run", "-m", "http.server", "8877", "--bind", "127.0.0.1"]
+stop_command = ["true"]
+theme_toggle_selector = "#theme-toggle"
+stage_selector = "[data-stage-id]"
+current_stage_selector = "[data-stage-id][aria-current='step']"
+scroll_anchor_selector = "#explorer"
+json_selectors = ["#stage-input", "#stage-output"]
+
+[[browser.controls]]
+id = "copy-stage-input"
+kind = "copy"
+selector = "[data-copy-target='stage-input']"
+feedback_selector = "#copy-input-status"
+success_text = "Copied"
+failure_text = "Copy failed"
+
+[[browser.controls]]
+id = "copy-stage-output"
+kind = "copy"
+selector = "[data-copy-target='stage-output']"
+feedback_selector = "#copy-output-status"
+success_text = "Copied"
+failure_text = "Copy failed"
+
+[[browser.controls]]
+id = "copy-stage-yaml"
+kind = "copy"
+selector = "[data-copy-target='stage-yaml']"
+feedback_selector = "#copy-yaml-status"
+success_text = "Copied"
+failure_text = "Copy failed"
+
+[[browser.controls]]
+id = "copy-run-command"
+kind = "copy"
+selector = "[data-copy-target='run-command']"
+feedback_selector = "#copy-run-status"
+success_text = "Copied"
+failure_text = "Copy failed"
+
+[[browser.controls]]
+id = "copy-check-command"
+kind = "copy"
+selector = "[data-copy-target='check-command']"
+feedback_selector = "#copy-check-status"
+success_text = "Copied"
+failure_text = "Copy failed"
+
+[[browser.controls]]
+id = "copy-deploy-command"
+kind = "copy"
+selector = "[data-copy-target='deploy-command']"
+feedback_selector = "#copy-deploy-status"
+success_text = "Copied"
+failure_text = "Copy failed"
+
+[[browser.controls]]
+id = "download-stage-records"
+kind = "download"
+selector = "#download-fixture"
+feedback_selector = "#download-fixture-status"
+success_text = "Downloaded"
+failure_text = "Download failed"
+failure_url_pattern = "**/fixtures/stages.json?download=1"
+
+[[browser.controls]]
+id = "download-pipeline"
+kind = "download"
+selector = "#download-pipeline"
+feedback_selector = "#download-pipeline-status"
+success_text = "Downloaded"
+failure_text = "Download failed"
+failure_url_pattern = "**/pipelines/scada-hivemq.yaml?download=1"
+
+[[pipelines]]
+id = "scada-hivemq"
+path = "pipelines/scada-hivemq.yaml"
+input = "fixtures/input.ndjson"
+expected = "fixtures/pipeline.expected.jsonl"
+timeout_seconds = 30
+
+[[stages]]
+id = "mqtt-ingest"
+pipeline = "scada-hivemq"
+selector = "[data-stage-id='mqtt-ingest']"
+input = "fixtures/stages.json"
+output = "fixtures/stages.json"
+
+[[stages]]
+id = "protobuf-decode"
+pipeline = "scada-hivemq"
+selector = "[data-stage-id='protobuf-decode']"
+input = "fixtures/stages.json"
+output = "fixtures/stages.json"
+
+[[stages]]
+id = "schema-validation"
+pipeline = "scada-hivemq"
+selector = "[data-stage-id='schema-validation']"
+input = "fixtures/stages.json"
+output = "fixtures/stages.json"
+
+[[stages]]
+id = "stateful-deadband"
+pipeline = "scada-hivemq"
+selector = "[data-stage-id='stateful-deadband']"
+input = "fixtures/stages.json"
+output = "fixtures/stages.json"
+
+[[stages]]
+id = "protobuf-reencode"
+pipeline = "scada-hivemq"
+selector = "[data-stage-id='protobuf-reencode']"
+input = "fixtures/stages.json"
+output = "fixtures/stages.json"
+
+[[stages]]
+id = "authenticated-fanout"
+pipeline = "scada-hivemq"
+selector = "[data-stage-id='authenticated-fanout']"
+input = "fixtures/stages.json"
+output = "fixtures/stages.json"
+
+[[services]]
+id = "secured-runtime"
+command = ["./run-demo.sh"]
+ready_url = "http://127.0.0.1:8888/"
+stop_command = ["./stop-demo.sh"]
+
+[[platforms]]
+name = "compose"
+profile = "compose"
+files = ["docker-compose.yml"]
+tls = true
+auth = true
+persistent = true
+validators = [["docker", "compose", "config", "--quiet"]]
+
+[[platforms]]
+name = "mqtt"
+profile = "mqtt"
+files = ["docker-compose.yml", "hivemq/config.xml", "sparkplug_b.proto"]
+tls = true
+auth = true
+persistent = true
+service = "secured-runtime"
+probe_command = ["uv", "run", "scripts/probe_runtime.py"]
+validators = [
+  [
+    "uv", "run", "--with", "grpcio-tools==1.71.0",
+    "--with", "protobuf==5.29.3", "scripts/validate_sparkplug.py",
+  ],
+]
+
+[regressions]
+features = "public-features.json"
+removal_files = ["public-removals/*.json"]

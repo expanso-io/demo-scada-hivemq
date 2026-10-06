@@ -1,0 +1,28 @@
+{
+  "pipeline": "scada-hivemq",
+  "input_records": 3,
+  "primary_records": 2,
+  "archive_records": 2,
+  "metrics_records": 2,
+  "quarantine_records": 1,
+  "primary": [
+    {
+      "seq": 17,
+      "metric_names": ["Temperature", "Pressure", "DoorSensor"]
+    },
+    {
+      "seq": 18,
+      "metric_names": ["DoorSensor"]
+    }
+  ],
+  "quarantine": [
+    {
+      "seq": 19,
+      "errors": ["value"]
+    }
+  ],
+  "security": {
+    "authenticated_tls_connection": "required",
+    "anonymous_connection": "rejected"
+  }
+}

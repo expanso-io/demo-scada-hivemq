@@ -31,3 +31,6 @@ venv/
 
 # OS
 .DS_Store
+
+# public-bar reports
+artifacts/

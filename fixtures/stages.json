@@ -1,0 +1,110 @@
+{
+  "fixture": "fixtures/input.ndjson",
+  "pipeline": "pipelines/scada-hivemq.yaml",
+  "stages": [
+    {
+      "id": "mqtt-ingest",
+      "title": "Authenticated MQTT ingest",
+      "summary": "Expanso Edge receives a binary Sparkplug B DDATA message from the private source broker.",
+      "pipeline_lines": [17, 50],
+      "input": {
+        "topic": "spBv1.0/Expanso/DDATA/edge1/sensors",
+        "qos": 1,
+        "record_id": "within-deadband"
+      },
+      "output": {
+        "protobuf_bytes": 89,
+        "payload_base64": "CPq4nfmQNBIbCgtUZW1wZXJhdHVyZRj6uJ35kDQgCWUzM5FCEhgKCFByZXNzdXJlGPq4nfmQNCAJZc3MDEASFwoKRG9vclNlbnNvchj6uJ35kDQgA1AAGBI="
+      }
+    },
+    {
+      "id": "protobuf-decode",
+      "title": "Sparkplug B decode",
+      "summary": "The protobuf processor decodes the message against the shipped Eclipse Tahu schema.",
+      "pipeline_lines": [45, 50],
+      "input": {
+        "protobuf_bytes": 89,
+        "schema": "sparkplug_b.proto",
+        "message": "org.eclipse.tahu.protobuf.Payload"
+      },
+      "output": {
+        "timestamp": "1791255600250",
+        "seq": 18,
+        "metrics": [
+          {"name": "Temperature", "datatype": 9, "floatValue": 72.6},
+          {"name": "Pressure", "datatype": 9, "floatValue": 2.2},
+          {"name": "DoorSensor", "datatype": 3, "intValue": 0}
+        ]
+      }
+    },
+    {
+      "id": "schema-validation",
+      "title": "Payload schema checks",
+      "summary": "Topic shape, metric names, Sparkplug datatypes, and operating ranges are checked before forwarding.",
+      "pipeline_lines": [52, 84],
+      "input": {
+        "topic_parts": ["spBv1.0", "Expanso", "DDATA", "edge1", "sensors"],
+        "metric_names": ["Temperature", "Pressure", "DoorSensor"],
+        "datatypes": [9, 9, 3]
+      },
+      "output": {
+        "route": "primary",
+        "validation_errors": []
+      }
+    },
+    {
+      "id": "stateful-deadband",
+      "title": "Stateful deadband",
+      "summary": "The prior payload comes from the edge cache. Temperature and pressure changes below their thresholds are removed.",
+      "pipeline_lines": [86, 138],
+      "input": {
+        "previous": {"Temperature": 72.4, "Pressure": 2.1, "DoorSensor": 0},
+        "current": {"Temperature": 72.6, "Pressure": 2.2, "DoorSensor": 0},
+        "thresholds": {"Temperature": 1.0, "Pressure": 0.5}
+      },
+      "output": {
+        "metrics_before": 3,
+        "metrics_after": 1,
+        "metrics": [
+          {"name": "DoorSensor", "datatype": 3, "intValue": 0}
+        ]
+      }
+    },
+    {
+      "id": "protobuf-reencode",
+      "title": "Sparkplug B re-encode",
+      "summary": "The retained metrics are encoded back into a valid Sparkplug B protobuf payload.",
+      "pipeline_lines": [133, 153],
+      "input": {
+        "timestamp": "1791255600250",
+        "seq": 18,
+        "metrics": [
+          {"name": "DoorSensor", "datatype": 3, "intValue": 0}
+        ]
+      },
+      "output": {
+        "protobuf_bytes": 34,
+        "payload_base64": "CPq4nfmQNBIXCgpEb29yU2Vuc29yGPq4nfmQNCADUAAYEg=="
+      }
+    },
+    {
+      "id": "authenticated-fanout",
+      "title": "Authenticated TLS fan-out",
+      "summary": "HiveMQ receives the primary protobuf, a gzip archive copy, and a JSON metrics record over authenticated TLS.",
+      "pipeline_lines": [177, 252],
+      "input": {
+        "topic": "spBv1.0/Expanso/DDATA/edge1/sensors",
+        "protobuf_bytes": 34,
+        "tls": true,
+        "authenticated": true
+      },
+      "output": {
+        "destinations": [
+          {"topic": "spBv1.0/Expanso/DDATA/edge1/sensors", "format": "Sparkplug B protobuf"},
+          {"topic": "archive/spBv1.0/Expanso/DDATA/edge1/sensors", "format": "gzip Sparkplug B protobuf"},
+          {"topic": "metrics/spBv1.0/Expanso/DDATA/edge1/sensors", "format": "JSON summary"}
+        ]
+      }
+    }
+  ]
+}

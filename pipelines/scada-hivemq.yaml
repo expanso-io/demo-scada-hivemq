@@ -6,12 +6,18 @@
 name: scada-hivemq
 description: Validate, deadband, re-encode, and fan out Sparkplug B telemetry
 type: pipeline
+namespace: demos
+labels:
+  demo: scada-hivemq
+selector:
+  match_labels:
+    demo: scada-hivemq
 
 config:
   input:
     mqtt:
       urls:
-        - "tcp://mqtt-source:1883"
+        - "${SOURCE_MQTT_URL}"
       topics:
         - "spBv1.0/#"
       client_id: "expanso-scada-input"
@@ -22,15 +28,25 @@ config:
 
   pipeline:
     processors:
+      - switch:
+          - check: meta("mqtt_topic") == null
+            processors:
+              - mapping: |
+                  meta fixture_replay = "true"
+                  meta source_topic = this.topic
+                  root = this.payload_base64.decode("base64")
+          - processors:
+              - mapping: |
+                  meta source_topic = meta("mqtt_topic")
+
       - mapping: |
-          meta source_topic = meta("mqtt_topic")
           meta protobuf_bytes = content().length()
 
       - protobuf:
           operator: to_json
           message: org.eclipse.tahu.protobuf.Payload
           import_paths:
-            - /schemas/sparkplug_b.proto
+            - sparkplug_b.proto
           use_proto_names: false
 
       - mapping: |
@@ -118,8 +134,23 @@ config:
                   operator: from_json
                   message: org.eclipse.tahu.protobuf.Payload
                   import_paths:
-                    - /schemas/sparkplug_b.proto
+                    - sparkplug_b.proto
                   discard_unknown: false
+
+              - switch:
+                  - check: meta("fixture_replay") == "true"
+                    processors:
+                      - protobuf:
+                          operator: to_json
+                          message: org.eclipse.tahu.protobuf.Payload
+                          import_paths:
+                            - sparkplug_b.proto
+                      - mapping: |
+                          root = {
+                            "route": "primary",
+                            "seq": this.seq,
+                            "metric_names": this.metrics.map_each(m -> m.name),
+                          }
 
           - processors:
               - mapping: |
@@ -133,6 +164,15 @@ config:
                   message: >-
                     Sparkplug quarantined topic=${! meta("source_topic") }
                     errors=${! meta("validation_errors") }
+              - switch:
+                  - check: meta("fixture_replay") == "true"
+                    processors:
+                      - mapping: |
+                          root = {
+                            "route": "quarantine",
+                            "seq": this.payload.seq,
+                            "errors": this.errors,
+                          }
 
   output:
     switch:
@@ -146,7 +186,7 @@ config:
               outputs:
                 - mqtt:
                     urls:
-                      - "tcp://mqtt-broker:8883"
+                      - "${HIVEMQ_URL}"
                     client_id: "expanso-scada-primary"
                     user: "${HIVEMQ_USER}"
                     password: "${HIVEMQ_PASSWORD}"
@@ -154,11 +194,11 @@ config:
                     qos: 1
                     tls:
                       enabled: true
-                      root_cas_file: /run/hivemq-tls/ca.crt
+                      root_cas_file: "${HIVEMQ_CA_FILE}"
 
                 - mqtt:
                     urls:
-                      - "tcp://mqtt-broker:8883"
+                      - "${HIVEMQ_URL}"
                     client_id: "expanso-scada-archive"
                     user: "${HIVEMQ_USER}"
                     password: "${HIVEMQ_PASSWORD}"
@@ -166,14 +206,14 @@ config:
                     qos: 1
                     tls:
                       enabled: true
-                      root_cas_file: /run/hivemq-tls/ca.crt
+                      root_cas_file: "${HIVEMQ_CA_FILE}"
                   processors:
                     - compress:
                         algorithm: gzip
 
                 - mqtt:
                     urls:
-                      - "tcp://mqtt-broker:8883"
+                      - "${HIVEMQ_URL}"
                     client_id: "expanso-scada-metrics"
                     user: "${HIVEMQ_USER}"
                     password: "${HIVEMQ_PASSWORD}"
@@ -181,13 +221,13 @@ config:
                     qos: 1
                     tls:
                       enabled: true
-                      root_cas_file: /run/hivemq-tls/ca.crt
+                      root_cas_file: "${HIVEMQ_CA_FILE}"
                   processors:
                     - protobuf:
                         operator: to_json
                         message: org.eclipse.tahu.protobuf.Payload
                         import_paths:
-                          - /schemas/sparkplug_b.proto
+                          - sparkplug_b.proto
                     - mapping: |
                         root = {
                           "topic": meta("source_topic"),
@@ -201,7 +241,7 @@ config:
           output:
             mqtt:
               urls:
-                - "tcp://mqtt-broker:8883"
+                - "${HIVEMQ_URL}"
               client_id: "expanso-scada-quarantine"
               user: "${HIVEMQ_USER}"
               password: "${HIVEMQ_PASSWORD}"
@@ -209,7 +249,7 @@ config:
               qos: 1
               tls:
                 enabled: true
-                root_cas_file: /run/hivemq-tls/ca.crt
+                root_cas_file: "${HIVEMQ_CA_FILE}"
 
 resources:
   caches:

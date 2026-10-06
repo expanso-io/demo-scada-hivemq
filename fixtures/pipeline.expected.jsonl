@@ -1,0 +1,3 @@
+{"route":"primary","seq":17,"metric_names":["Temperature","Pressure","DoorSensor"]}
+{"route":"primary","seq":18,"metric_names":["DoorSensor"]}
+{"route":"quarantine","seq":19,"errors":["value"]}

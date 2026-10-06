@@ -1,111 +1,56 @@
-> **Directory-wide rules apply.** Read [`../AGENTS.md`](../AGENTS.md) first —
-> it governs every demo in `projects/demos/`. For anything involving a screen
-> recording, a finished video, publishing copy, or a launch, read
+> **Directory-wide rules apply.** Read [`../AGENTS.md`](../AGENTS.md) first.
+> It governs every demo in `projects/demos/`. For work involving a screen
+> recording, finished video, publishing copy, or a launch, read
 > [`../demo-guidance/README.md`](../demo-guidance/README.md) before acting.
-> `_demo-kit` runs before you record; `demo-guidance` runs after.
+> `_demo-kit` runs before recording; `demo-guidance` runs after.
 
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## What this repository runs
 
-## What This Is
-
-A self-contained Docker Compose demo showing Expanso Edge between industrial SCADA sensors (Sparkplug B over MQTT) and HiveMQ, with runtime toggles for dead-banding, schema validation, compression, and fan-out. Designed for narrated screen recordings (~8-10 min).
+This demo sends Sparkplug B protobuf records from an authenticated Mosquitto
+source through Expanso Edge v2.1.21 to an authenticated TLS-only HiveMQ broker.
+The Edge job decodes, validates, deadbands, re-encodes, and fans out the records.
+The dashboard is a localhost presenter and fixture explorer; it does not process
+or invent runtime results in the browser.
 
 ## Commands
 
 ```bash
-# Run the demo (starts Docker services, optionally deploys pipelines to Expanso Cloud)
-./run-demo.sh
-
-# Stop all services
-./stop-demo.sh
-
-# Start services directly
-docker compose up --build
-
-# Rebuild just the dashboard (fastest iteration)
-docker compose up -d --force-recreate dashboard
+./run-demo.sh       # reset, start, replay, and verify the bounded fixture
+./stop-demo.sh      # stop only the local Compose project
+just static-check   # source checks without browser or runtime startup
+just ui-check       # rendered browser checks
+just check          # full source, browser, and runtime acceptance
+just live           # acceptance, then optional continuous OPC UA source
+just cloud-deploy   # deploy the job through the configured Cloud CLI profile
 ```
 
-Endpoints when running:
-- Dashboard: `http://localhost:8888`
-- MQTT websocket (via nginx proxy): `ws://localhost:8888/mqtt`
-- MQTT direct (HiveMQ): `tcp://localhost:1883`
-- HiveMQ websocket (direct): `ws://localhost:8000/mqtt`
+The local dashboard is <http://127.0.0.1:8888>. HiveMQ exposes MQTT over TLS at
+`127.0.0.1:8883`. The source broker and Expanso Edge API stay on the internal
+Compose network.
 
-## Architecture
+## Key files
 
-```
-SCADA Simulator (Python, paho-mqtt)
-  → HiveMQ CE (mqtt-broker, MQTT + websocket)
-    → Dashboard (nginx, proxies websocket, static HTML)
-```
+- `pipelines/scada-hivemq.yaml`: the only published Expanso job.
+- `fixtures/input.ndjson`: three decoded records used to build the protobuf
+  inputs.
+- `fixtures/expected.json`: expected output counts and metric names.
+- `fixtures/stages.json`: per-stage explorer input and output.
+- `scripts/verify_fixture.py`: secured end-to-end runtime assertion.
+- `dashboard/index.html`, `styles.css`, `app.js`: presenter and explorer.
+- `hivemq/config.xml`: TLS listener.
+- `hivemq/extension-config.xml`: file RBAC extension configuration.
+- `docker-compose.yml`: pinned services, networks, volumes, and security.
 
-**Services** in `docker-compose.yml`:
-- `scada-sim` — Python MQTT publisher generating Temperature, Pressure, DoorSensor telemetry for 4 industrial sites (wind, solar, battery, distgen) every 1s
-- `mqtt-broker` — HiveMQ Community Edition (MQTT TCP 1883, websocket 8000)
-- `dashboard` — nginx on port 8888 serving static HTML + proxying websocket to HiveMQ
+## Proof boundaries
 
-**Data flow**: scada-sim publishes JSON to `spBv1.0/SCADA/DDATA/<node>/<device>` topics. Dashboard subscribes via websocket and processes messages in the browser. Feature toggles (deadband, schema, compression, fan-out) demonstrate what Expanso Edge does when deployed in the data path.
+The Compose lane uses Expanso Edge local mode and generated broker credentials.
+It proves the shipped fixture, pipeline, protocol handling, TLS, authentication,
+and output assertions. Production uses Expanso Cloud to assign the same job to
+nodes labeled `demo=scada-hivemq`. A local pass is not a Cloud execution.
 
-**Cloud pipelines**: `pipelines/0*.yaml` are production pipeline configs for deployment to Expanso Cloud via `expanso-cli job deploy`. They contain the actual Expanso Edge processing logic.
-
-## Key Files
-
-- **`dashboard/index.html`** — Entire frontend (~480 lines). Single HTML file with inline CSS/JS. Connects to HiveMQ via MQTT.js websocket, renders animated architecture diagram with live metrics and feature toggles.
-- **`dashboard/nginx.conf`** — nginx config with websocket proxy (`/mqtt` → `mqtt-broker:8000/mqtt`)
-- **`scada-sim/sim.py`** — Python SCADA simulator using paho-mqtt. Publishes Sparkplug B-style JSON messages.
-- **`scada-sim/Dockerfile`** — Python slim image with paho-mqtt
-- **`hivemq/config.xml`** — HiveMQ CE config with TCP (1883) and websocket (8000) listeners
-- **`pipelines/*.yaml`** — Expanso Edge pipeline configs for Cloud deployment (deadband, compression, schema validation, fan-out)
-- **`run-demo.sh` / `stop-demo.sh`** — Lifecycle scripts
-- **`DESIGN_BRIEF.md`** — Visual design requirements for the dashboard
-
-## Dashboard Design Context
-
-The dashboard is presentation-grade, not an admin panel. See `DESIGN_BRIEF.md` for full requirements. Key principles:
-- Architecture diagram is the hero; metrics are supporting evidence
-- Progressive reveal: toggles enable features one-by-one, architecture visually evolves
-- Four feature toggles: deadband → schema validation → compression → fan-out
-- Animation explains system behavior (data flow direction, filtering, branching)
-- MQTT.js library loaded from CDN for browser websocket connection
-- Real data from scada-sim; processing simulation in browser
-
-## Environment Variables
-
-| Variable | Purpose |
-|----------|---------|
-| `EXPANSO_CLUSTER_ID` | Target cluster for pipeline deployment |
-| `EXPANSO_CLI_ENDPOINT` | Expanso Cloud API endpoint |
-| `MQTT_HOST` | MQTT broker for scada-sim (default: mqtt-broker) |
-| `MQTT_PORT` | MQTT port (default: 1883) |
-| `PUBLISH_INTERVAL` | Seconds between telemetry publishes (default: 1.0) |
-
-## Pipeline Structure
-
-All four pipelines follow the same pattern: MQTT input → Bloblang processors → MQTT output. They use Expanso Edge (not raw Benthos) and are deployed via Expanso Cloud, not run locally.
-
-Pipeline naming convention: `scada-sparkplug-{feature}` (e.g., `scada-sparkplug-deadband`).
-
-Note: The Expanso Edge container image (`ghcr.io/expanso-io/expanso-edge`) does not currently include the `mqtt` component in its build. For local demos, scada-sim publishes directly to HiveMQ and the dashboard simulates Expanso Edge processing in the browser.
-
-## Unreconciled: two simulator variants live in this repo
-
-A `chore: pre-migration state capture` commit landed on `master` from another
-machine carrying a *second*, different build of this demo. Both are present in
-the tree and neither has been deleted, but only one can be the demo you record.
-
-| | Browser-simulation variant | Pre-migration variant |
-|---|---|---|
-| Simulator | `scada-sim/sim.py` (paho-mqtt, JSON) | `scada-sim/app.py` (real protobuf Sparkplug B via `sparkplug_b.proto`) |
-| HiveMQ config | `hivemq/config.xml` | `hivemq/conf/config.xml` |
-| Edge processing | simulated in the dashboard | real `expanso-edge/` service + `ignition-edge/` provisioning |
-
-`scada-sim/Dockerfile` currently builds the **pre-migration** variant, because
-that is the one whose `requirements.txt` and `.proto` were already published.
-`dashboard/nginx.conf` proxies for both (`/mqtt` for the browser variant,
-`/api/` and `/api-parallel/` for the edge services).
-
-Pick one and delete the other before recording. The rest of this file documents
-the browser-simulation variant.
+Commits `919390c` and `5477d01` removed the uncommissioned Ignition runtime. The
+current OPC UA simulator publishes real Sparkplug B directly. Files under
+`ignition-edge/provisioning/` are optional references and are not a running
+service.

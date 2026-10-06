@@ -2,9 +2,9 @@
 set -eu
 
 export SOURCE_MQTT_PASSWORD
-SOURCE_MQTT_PASSWORD=$(tr -d '\n' < /run/demo-secrets/source-password)
+SOURCE_MQTT_PASSWORD=$(tr -d '\n' < /run/secrets/source-password)
 export HIVEMQ_PASSWORD
-HIVEMQ_PASSWORD=$(tr -d '\n' < /run/demo-secrets/hivemq-password)
+HIVEMQ_PASSWORD=$(tr -d '\n' < /run/secrets/hivemq-password)
 
 exec expanso-edge run \
   --local \

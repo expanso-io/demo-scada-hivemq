@@ -17,6 +17,6 @@ COPY --chown=10000:0 hivemq/extension-config.xml \
   /opt/hivemq/extensions/hivemq-file-rbac-extension/conf/config.xml
 RUN rm -f \
   /opt/hivemq/extensions/hivemq-file-rbac-extension/conf/credentials.xml \
-  && ln -s /run/demo-secrets/hivemq-credentials.xml \
+  && ln -s /run/secrets/hivemq-credentials.xml \
   /opt/hivemq/extensions/hivemq-file-rbac-extension/conf/credentials.xml
 USER 10000:0
