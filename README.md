@@ -17,7 +17,7 @@ To stop: `./stop-demo.sh`
 ---
 
 
-A self-contained Docker Compose demo showing how Expanso Edge sits between an upstream Sparkplug publisher and HiveMQ, with runtime toggles for dead-banding, schema validation, compression, and fan-out.
+Built off of potential user requirements for SCADA HiveMQ MQTT streaming and industrial telemetry pipelines, this self-contained Docker Compose demo shows how Expanso Edge sits between an upstream Sparkplug publisher (via OPC-UA) and HiveMQ, with runtime toggles for dead-banding, schema validation, compression, and fan-out.
 
 ## Architecture
 
