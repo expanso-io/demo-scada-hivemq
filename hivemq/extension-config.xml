@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension-configuration>
+  <credentials-reload-interval>30</credentials-reload-interval>
+  <listener-names>
+    <listener-name>secure-mqtt</listener-name>
+  </listener-names>
+  <password-type>PLAIN</password-type>
+  <next-extension-instead-of-fail>false</next-extension-instead-of-fail>
+</extension-configuration>

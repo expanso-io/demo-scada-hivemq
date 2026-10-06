@@ -14,10 +14,10 @@ UPDATE_INTERVAL = float(os.getenv("UPDATE_INTERVAL_SEC", "0.1"))
 OPC_ENDPOINT = os.getenv("OPC_ENDPOINT", "opc.tcp://0.0.0.0:4840/freeopcua/server/")
 MQTT_HOST = os.getenv("MQTT_HOST", "mqtt-source")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER = os.getenv("MQTT_USER", "source-publisher")
+MQTT_PASSWORD = os.environ["MQTT_PASSWORD"]
 SPARKPLUG_TOPIC = os.getenv("SPARKPLUG_TOPIC", "spBv1.0/Expanso/DDATA/edge1/sensors")
-PARALLEL_TOPIC = os.getenv("PARALLEL_SPARKPLUG_TOPIC", "parallel/spBv1.0/Expanso/DDATA/edge1/sensors")
 ENABLE_DIRECT_SPARKPLUG = os.getenv("ENABLE_DIRECT_SPARKPLUG", "true").lower() == "true"
-ENABLE_PARALLEL_FEED = os.getenv("ENABLE_PARALLEL_FEED", "true").lower() == "true"
 
 # Sparkplug metric datatype ids used by this demo.
 DT_INT32 = 3
@@ -89,6 +89,7 @@ async def main() -> None:
     mqtt_client = None
     if ENABLE_DIRECT_SPARKPLUG:
         mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="scada-sparkplug-pub")
+        mqtt_client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
         mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
         mqtt_client.loop_start()
 
@@ -121,9 +122,7 @@ async def main() -> None:
 
             if mqtt_client is not None:
                 payload = build_payload(sensors)
-                mqtt_client.publish(SPARKPLUG_TOPIC, payload, qos=0, retain=False)
-                if ENABLE_PARALLEL_FEED:
-                    mqtt_client.publish(PARALLEL_TOPIC, payload, qos=0, retain=False)
+                mqtt_client.publish(SPARKPLUG_TOPIC, payload, qos=1, retain=False)
 
             await asyncio.sleep(UPDATE_INTERVAL)
 

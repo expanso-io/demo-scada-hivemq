@@ -1,0 +1,218 @@
+# Sparkplug B processing at the edge.
+# The source broker is private to the Compose network. HiveMQ accepts only
+# authenticated TLS clients. Expanso Edge decodes protobuf, validates the
+# payload, applies stateful per-metric deadbands, re-encodes protobuf, and
+# fans valid readings out to primary, compressed archive, and metrics topics.
+name: scada-hivemq
+description: Validate, deadband, re-encode, and fan out Sparkplug B telemetry
+type: pipeline
+
+config:
+  input:
+    mqtt:
+      urls:
+        - "tcp://mqtt-source:1883"
+      topics:
+        - "spBv1.0/#"
+      client_id: "expanso-scada-input"
+      user: "${SOURCE_MQTT_USER}"
+      password: "${SOURCE_MQTT_PASSWORD}"
+      qos: 1
+      clean_session: false
+
+  pipeline:
+    processors:
+      - mapping: |
+          meta source_topic = meta("mqtt_topic")
+          meta protobuf_bytes = content().length()
+
+      - protobuf:
+          operator: to_json
+          message: org.eclipse.tahu.protobuf.Payload
+          import_paths:
+            - /schemas/sparkplug_b.proto
+          use_proto_names: false
+
+      - mapping: |
+          let parts = meta("source_topic").split("/")
+          let allowed = ["Temperature", "Pressure", "DoorSensor"]
+          let bad_names = this.metrics.filter(m -> !$allowed.contains(m.name))
+          let bad_types = this.metrics.filter(m -> (m.name == "Temperature" &&
+            m.datatype != 9) ||
+            (m.name == "Pressure" && m.datatype != 9) ||
+            (m.name == "DoorSensor" && m.datatype != 3)
+          )
+          let bad_values = this.metrics.filter(m -> (m.name == "Temperature" &&
+              (m.floatValue < -40 || m.floatValue > 150)) ||
+            (m.name == "Pressure" &&
+              (m.floatValue < 0.5 || m.floatValue > 5.0)) ||
+            (m.name == "DoorSensor" &&
+              (m.intValue < 0 || m.intValue > 1))
+          )
+          let topic_error = if $parts.length() == 5 &&
+            $parts.index(2) == "DDATA" { "" } else { "topic" }
+          let metrics_error = if this.metrics.length() > 0 { "" } else { "metrics" }
+          let name_error = if $bad_names.length() == 0 { "" } else { "name" }
+          let datatype_error = if $bad_types.length() == 0 { "" } else { "datatype" }
+          let value_error = if $bad_values.length() == 0 { "" } else { "value" }
+          let errors = [
+            $topic_error,
+            $metrics_error,
+            $name_error,
+            $datatype_error,
+            $value_error,
+          ].filter(e -> e != "")
+          meta route = if $errors.length() == 0 { "primary" } else { "quarantine" }
+          meta validation_errors = $errors.join(",")
+          meta full_payload = content().string()
+          root = this
+
+      - switch:
+          - check: meta("route") == "primary"
+            processors:
+              - branch:
+                  request_map: |
+                    meta deadband_key = meta("source_topic")
+                    root = ""
+                  processors:
+                    - cache:
+                        resource: deadband_cache
+                        operator: get
+                        key: '${! meta("deadband_key") }'
+                  result_map: |
+                    root._previous = if errored() { null } else { this }
+
+              - cache:
+                  resource: deadband_cache
+                  operator: set
+                  key: '${! meta("source_topic") }'
+                  value: '${! meta("full_payload") }'
+
+              - mapping: |
+                  let previous = this._previous
+                  let kept = this.metrics.filter(m -> match m.name {
+                    "Temperature" => $previous == null ||
+                      !$previous.metrics.any(p -> p.name == m.name &&
+                        (m.floatValue - p.floatValue).abs() < 1.0),
+                    "Pressure" => $previous == null ||
+                      !$previous.metrics.any(p -> p.name == m.name &&
+                        (m.floatValue - p.floatValue).abs() < 0.5),
+                    _ => true,
+                  })
+                  meta metrics_before = this.metrics.length()
+                  meta metrics_after = $kept.length()
+                  root = this
+                  root._previous = deleted()
+                  root.metrics = $kept
+
+              - log:
+                  level: INFO
+                  message: >-
+                    Sparkplug processed topic=${! meta("source_topic") }
+                    metrics=${! meta("metrics_before") }/${! meta("metrics_after") }
+
+              - mapping: |
+                  root = if this.metrics.length() == 0 { deleted() } else { this }
+
+              - protobuf:
+                  operator: from_json
+                  message: org.eclipse.tahu.protobuf.Payload
+                  import_paths:
+                    - /schemas/sparkplug_b.proto
+                  discard_unknown: false
+
+          - processors:
+              - mapping: |
+                  root = {
+                    "topic": meta("source_topic"),
+                    "errors": meta("validation_errors").split(","),
+                    "payload": this,
+                  }
+              - log:
+                  level: WARN
+                  message: >-
+                    Sparkplug quarantined topic=${! meta("source_topic") }
+                    errors=${! meta("validation_errors") }
+
+  output:
+    switch:
+      strict_mode: true
+      retry_until_success: true
+      cases:
+        - check: meta("route") == "primary"
+          output:
+            broker:
+              pattern: fan_out
+              outputs:
+                - mqtt:
+                    urls:
+                      - "tcp://mqtt-broker:8883"
+                    client_id: "expanso-scada-primary"
+                    user: "${HIVEMQ_USER}"
+                    password: "${HIVEMQ_PASSWORD}"
+                    topic: '${! meta("source_topic") }'
+                    qos: 1
+                    tls:
+                      enabled: true
+                      root_cas_file: /run/hivemq-tls/ca.crt
+
+                - mqtt:
+                    urls:
+                      - "tcp://mqtt-broker:8883"
+                    client_id: "expanso-scada-archive"
+                    user: "${HIVEMQ_USER}"
+                    password: "${HIVEMQ_PASSWORD}"
+                    topic: 'archive/${! meta("source_topic") }'
+                    qos: 1
+                    tls:
+                      enabled: true
+                      root_cas_file: /run/hivemq-tls/ca.crt
+                  processors:
+                    - compress:
+                        algorithm: gzip
+
+                - mqtt:
+                    urls:
+                      - "tcp://mqtt-broker:8883"
+                    client_id: "expanso-scada-metrics"
+                    user: "${HIVEMQ_USER}"
+                    password: "${HIVEMQ_PASSWORD}"
+                    topic: 'metrics/${! meta("source_topic") }'
+                    qos: 1
+                    tls:
+                      enabled: true
+                      root_cas_file: /run/hivemq-tls/ca.crt
+                  processors:
+                    - protobuf:
+                        operator: to_json
+                        message: org.eclipse.tahu.protobuf.Payload
+                        import_paths:
+                          - /schemas/sparkplug_b.proto
+                    - mapping: |
+                        root = {
+                          "topic": meta("source_topic"),
+                          "protobuf_bytes": meta("protobuf_bytes").number(),
+                          "metrics_before": meta("metrics_before").number(),
+                          "metrics_after": this.metrics.length(),
+                          "metric_names": this.metrics.map_each(m -> m.name),
+                        }
+
+        - check: meta("route") == "quarantine"
+          output:
+            mqtt:
+              urls:
+                - "tcp://mqtt-broker:8883"
+              client_id: "expanso-scada-quarantine"
+              user: "${HIVEMQ_USER}"
+              password: "${HIVEMQ_PASSWORD}"
+              topic: 'quarantine/${! meta("source_topic") }'
+              qos: 1
+              tls:
+                enabled: true
+                root_cas_file: /run/hivemq-tls/ca.crt
+
+resources:
+  caches:
+    - label: deadband_cache
+      memory:
+        default_ttl: 30m
