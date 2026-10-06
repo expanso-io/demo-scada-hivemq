@@ -130,7 +130,7 @@ destination brokers. Its runtime environment must define:
 | `SOURCE_MQTT_URL` | MQTT URL for the authenticated source broker |
 | `SOURCE_MQTT_USER` | source username |
 | `SOURCE_MQTT_PASSWORD` | source password from the node secret store |
-| `HIVEMQ_URL` | TLS MQTT URL for HiveMQ |
+| `HIVEMQ_URL` | TLS MQTT URL for HiveMQ, such as `ssl://broker:8883` |
 | `HIVEMQ_USER` | HiveMQ publisher username |
 | `HIVEMQ_PASSWORD` | HiveMQ password from the node secret store |
 | `HIVEMQ_CA_FILE` | mounted CA certificate path |

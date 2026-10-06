@@ -29,7 +29,7 @@ for secret_file in \
 done
 
 echo "Resetting the local fixture lane..."
-docker compose down --remove-orphans
+docker compose down --volumes --remove-orphans
 docker compose up -d --build
 
 echo "Waiting for the localhost dashboard..."
@@ -50,7 +50,22 @@ if [[ "$dashboard_ready" != true ]]; then
 fi
 
 echo "Replaying three Sparkplug B records through Expanso Edge..."
-docker compose --profile verify run --rm fixture-check
+docker compose --profile verify run --rm --no-deps fixture-check
+
+echo "Recreating HiveMQ to prove retained broker state..."
+docker compose up \
+  --detach \
+  --force-recreate \
+  --no-deps \
+  --wait \
+  --wait-timeout 60 \
+  mqtt-broker
+docker compose --profile verify run \
+  --rm \
+  --no-deps \
+  --env VERIFY_PERSISTENCE_ONLY=1 \
+  fixture-check
+uv run scripts/probe_runtime.py
 
 echo
 echo "Local acceptance passed."

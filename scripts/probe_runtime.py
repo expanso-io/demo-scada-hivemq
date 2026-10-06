@@ -20,6 +20,7 @@ def main() -> None:
         "quarantine": 1,
     }
     assert report["primary_metric_names"][1] == ["DoorSensor"]
+    assert report["persistence"] == "retained message survived broker recreation"
     print("secured MQTT wire probe passed")
 
 

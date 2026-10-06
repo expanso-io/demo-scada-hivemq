@@ -27,6 +27,7 @@ config:
       clean_session: false
 
   pipeline:
+    threads: 1
     processors:
       - switch:
           - check: meta("mqtt_topic") == null
@@ -148,7 +149,7 @@ config:
                       - mapping: |
                           root = {
                             "route": "primary",
-                            "seq": this.seq,
+                            "seq": this.seq.number(),
                             "metric_names": this.metrics.map_each(m -> m.name),
                           }
 
@@ -159,6 +160,7 @@ config:
                     "errors": meta("validation_errors").split(","),
                     "payload": this,
                   }
+                  root.payload.seq = this.seq.number()
               - log:
                   level: WARN
                   message: >-
@@ -170,7 +172,7 @@ config:
                       - mapping: |
                           root = {
                             "route": "quarantine",
-                            "seq": this.payload.seq,
+                            "seq": this.payload.seq.number(),
                             "errors": this.errors,
                           }
 
@@ -251,8 +253,7 @@ config:
                 enabled: true
                 root_cas_file: "${HIVEMQ_CA_FILE}"
 
-resources:
-  caches:
+  cache_resources:
     - label: deadband_cache
       memory:
         default_ttl: 30m

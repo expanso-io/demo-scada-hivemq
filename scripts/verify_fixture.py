@@ -24,6 +24,8 @@ SOURCE_TOPIC = "spBv1.0/Expanso/DDATA/edge1/sensors"
 CA_FILE = "/run/hivemq-tls/ca.crt"
 FIXTURE_FILE = Path("/fixtures/input.ndjson")
 EXPECTED_FILE = Path("/fixtures/expected.json")
+PERSISTENCE_TOPIC = "proof/persistence"
+PERSISTENCE_PAYLOAD = b"hivemq-volume-survived"
 
 
 def read_secret(name: str) -> str:
@@ -88,7 +90,109 @@ def anonymous_connection_is_rejected() -> bool:
     return complete.is_set() and not result["accepted"]
 
 
+def publish_persistence_marker() -> None:
+    connected = threading.Event()
+
+    def on_connect(
+        client: mqtt.Client,
+        userdata: object,
+        flags: mqtt.ConnectFlags,
+        reason_code: mqtt.ReasonCode,
+        properties: mqtt.Properties | None,
+    ) -> None:
+        del client, userdata, flags, properties
+        if reason_code.is_failure:
+            raise AssertionError(f"persistence publisher failed: {reason_code}")
+        connected.set()
+
+    client = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2,
+        client_id="fixture-persistence-publisher",
+    )
+    client.username_pw_set(
+        "fixture-observer", read_secret("hivemq-observer-password")
+    )
+    client.tls_set(ca_certs=CA_FILE, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+    client.on_connect = on_connect
+    client.connect(TARGET_HOST, TARGET_PORT, 10)
+    client.loop_start()
+    if not connected.wait(10):
+        raise AssertionError("persistence publisher did not connect")
+    publication = client.publish(
+        PERSISTENCE_TOPIC,
+        PERSISTENCE_PAYLOAD,
+        qos=1,
+        retain=True,
+    )
+    publication.wait_for_publish(5)
+    client.disconnect()
+    client.loop_stop()
+
+
+def verify_persistence_marker() -> None:
+    connected = threading.Event()
+    retained = threading.Event()
+
+    def on_connect(
+        client: mqtt.Client,
+        userdata: object,
+        flags: mqtt.ConnectFlags,
+        reason_code: mqtt.ReasonCode,
+        properties: mqtt.Properties | None,
+    ) -> None:
+        del userdata, flags, properties
+        if reason_code.is_failure:
+            raise AssertionError(f"persistence observer failed: {reason_code}")
+        client.subscribe(PERSISTENCE_TOPIC, qos=1)
+        connected.set()
+
+    def on_message(
+        client: mqtt.Client,
+        userdata: object,
+        message: mqtt.MQTTMessage,
+    ) -> None:
+        del client, userdata
+        if (
+            message.topic == PERSISTENCE_TOPIC
+            and bytes(message.payload) == PERSISTENCE_PAYLOAD
+            and message.retain
+        ):
+            retained.set()
+
+    client = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2,
+        client_id="fixture-persistence-observer",
+    )
+    client.username_pw_set(
+        "fixture-observer", read_secret("hivemq-observer-password")
+    )
+    client.tls_set(ca_certs=CA_FILE, tls_version=ssl.PROTOCOL_TLS_CLIENT)
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.connect(TARGET_HOST, TARGET_PORT, 10)
+    client.loop_start()
+    if not connected.wait(10):
+        raise AssertionError("persistence observer did not connect")
+    if not retained.wait(10):
+        raise AssertionError("retained marker did not survive broker recreation")
+    client.disconnect()
+    client.loop_stop()
+
+
+def persistence_only() -> None:
+    result_path = Path(os.environ["RESULT_PATH"])
+    report = json.loads(result_path.read_text())
+    verify_persistence_marker()
+    report["persistence"] = "retained message survived broker recreation"
+    result_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    print(json.dumps(report, indent=2, sort_keys=True))
+
+
 def main() -> None:
+    if os.getenv("VERIFY_PERSISTENCE_ONLY") == "1":
+        persistence_only()
+        return
+
     fixture = [json.loads(line) for line in FIXTURE_FILE.read_text().splitlines()]
     expected = json.loads(EXPECTED_FILE.read_text())
     received: list[tuple[str, bytes]] = []
@@ -199,8 +303,9 @@ def main() -> None:
     assert [record["metric_names"] for record in metrics_records] == primary_metrics
     quarantine = [json.loads(payload) for payload in grouped["quarantine"]]
     assert quarantine[0]["errors"] == expected["quarantine"][0]["errors"]
-    assert quarantine[0]["payload"]["seq"] == expected["quarantine"][0]["seq"]
+    assert int(quarantine[0]["payload"]["seq"]) == expected["quarantine"][0]["seq"]
     assert anonymous_connection_is_rejected(), "anonymous TLS connection was accepted"
+    publish_persistence_marker()
 
     report = {
         "fixture": str(FIXTURE_FILE),
@@ -209,6 +314,7 @@ def main() -> None:
         "primary_metric_names": primary_metrics,
         "authenticated_tls": "accepted",
         "anonymous_tls": "rejected",
+        "persistence": "retained marker published",
         "result": "pass",
     }
     result_path = os.getenv("RESULT_PATH")

@@ -29,6 +29,24 @@ services:
     security_opt: ["no-new-privileges:true"]
     restart: "no"
 
+  edge-data-init:
+    build:
+      context: .
+      dockerfile: edge-init/Dockerfile
+    user: "65534:65534"
+    entrypoint:
+      - /usr/local/bin/busybox
+      - chown
+      - -R
+      - 65532:65532
+      - /var/lib/expanso
+    volumes:
+      - expanso-data:/var/lib/expanso
+    read_only: true
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+    restart: "no"
+
   mqtt-source:
     image: eclipse-mosquitto:2.0.22@sha256:199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21
     user: "1883:1883"
@@ -74,6 +92,7 @@ services:
         condition: service_completed_successfully
     user: "10000:0"
     volumes:
+      - hivemq-home:/opt/hivemq
       - ./hivemq/config.xml:/opt/hivemq/conf/config.xml:ro
       - ./.runtime/tls:/run/hivemq-tls:ro
       - hivemq-data:/opt/hivemq/data
@@ -88,8 +107,10 @@ services:
       timeout: 3s
       retries: 30
       start_period: 20s
+    read_only: true
     tmpfs:
-      - /tmp:size=32m,mode=1777
+      - /tmp:size=32m,mode=1777,exec
+      - /opt/hivemq/extensions/hivemq-file-rbac-extension/credentials-archive:size=8m,mode=0750,uid=10000,gid=0
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
     networks: [data-plane]
@@ -97,6 +118,8 @@ services:
   expanso-edge:
     image: ghcr.io/expanso-io/expanso-edge:v2.1.21@sha256:2a9ec67c90075b0bf33811232971cd4ee03326181ed4186c799986cf9d371b38
     depends_on:
+      edge-data-init:
+        condition: service_completed_successfully
       mqtt-source:
         condition: service_healthy
       mqtt-broker:
@@ -107,7 +130,7 @@ services:
     environment:
       SOURCE_MQTT_URL: tcp://mqtt-source:1883
       SOURCE_MQTT_USER: source-publisher
-      HIVEMQ_URL: tcp://mqtt-broker:8883
+      HIVEMQ_URL: ssl://mqtt-broker:8883
       HIVEMQ_USER: expanso-edge
       HIVEMQ_CA_FILE: /run/hivemq-tls/ca.crt
     volumes:
@@ -182,12 +205,14 @@ services:
       - -c
       - >-
         exec uv run --active --no-sync
-        /scripts/verify_fixture.py
+        python /scripts/verify_fixture.py
     user: "${DEMO_HOST_UID:-1000}:${DEMO_HOST_GID:-1000}"
     environment:
       SOURCE_MQTT_USER: source-publisher
       HIVEMQ_USER: fixture-observer
+      PYTHONPATH: /app
       RESULT_PATH: /runtime/acceptance.json
+      UV_CACHE_DIR: /tmp/uv-cache
     volumes:
       - ./scripts/verify_fixture.py:/scripts/verify_fixture.py:ro
       - ./fixtures:/fixtures:ro
@@ -228,6 +253,7 @@ services:
 
 volumes:
   expanso-data:
+  hivemq-home:
   hivemq-data:
   hivemq-log:
   mqtt-source-data:

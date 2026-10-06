@@ -155,13 +155,17 @@ validators = [["docker", "compose", "config", "--quiet"]]
 [[platforms]]
 name = "mqtt"
 profile = "mqtt"
-files = ["docker-compose.yml", "hivemq/config.xml", "sparkplug_b.proto"]
+files = ["docker-compose.yml", "sparkplug_b.proto"]
 tls = true
 auth = true
 persistent = true
 service = "secured-runtime"
 probe_command = ["uv", "run", "scripts/probe_runtime.py"]
 validators = [
+  [
+    "xmllint", "--noout", "hivemq/config.xml",
+    "hivemq/extension-config.xml",
+  ],
   [
     "uv", "run", "--with", "grpcio-tools==1.71.0",
     "--with", "protobuf==5.29.3", "scripts/validate_sparkplug.py",

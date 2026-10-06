@@ -10,6 +10,30 @@
       "description": "Inspect real input, output, and shipped YAML for six stages"
     },
     {
+      "id": "mqtt-ingest",
+      "description": "Inspect the authenticated MQTT ingest stage"
+    },
+    {
+      "id": "protobuf-decode",
+      "description": "Inspect the Sparkplug B protobuf decode stage"
+    },
+    {
+      "id": "schema-validation",
+      "description": "Inspect the payload schema validation stage"
+    },
+    {
+      "id": "stateful-deadband",
+      "description": "Inspect the stateful per-metric deadband stage"
+    },
+    {
+      "id": "protobuf-reencode",
+      "description": "Inspect the Sparkplug B protobuf re-encode stage"
+    },
+    {
+      "id": "authenticated-fanout",
+      "description": "Inspect the authenticated TLS fan-out stage"
+    },
+    {
       "id": "animated-topology",
       "description": "Show source, Cloud control, Edge processing, and HiveMQ data flow"
     },
