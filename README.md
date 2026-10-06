@@ -66,13 +66,14 @@ Requirements:
 - `curl` on the host;
 - ports `8883` and `8888` available.
 
-Run:
+Start and stop:
 
 ```bash
-./run-demo.sh
+just up
+just down
 ```
 
-The script resets the local containers, starts both brokers and Expanso Edge,
+`just up` resets the local containers, starts both brokers and Expanso Edge,
 deploys the pipeline through the local Edge API, and replays the three fixture
 records. It exits only after the verifier observes:
 
@@ -84,13 +85,9 @@ records. It exits only after the verifier observes:
 - a successful authenticated TLS connection to HiveMQ;
 - a rejected anonymous TLS connection.
 
-Open <http://127.0.0.1:8888> after the command passes. Stop the stack with:
-
-```bash
-./stop-demo.sh
-```
-
-`stop-demo.sh` affects only the local Compose project. It does not delete Cloud
+Open <http://127.0.0.1:8888> after `just up` passes. `just down` stops every
+local container and fails unless ports 8883 and 8888 are free. It affects only
+the local Compose project. It does not delete Cloud
 jobs or broker volumes.
 
 The optional continuous OPC UA source and Sparkplug publisher is separate from

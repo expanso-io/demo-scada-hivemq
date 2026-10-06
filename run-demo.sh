@@ -71,4 +71,4 @@ uv run scripts/probe_runtime.py
 echo
 echo "Local acceptance passed."
 echo "Dashboard: http://127.0.0.1:8888"
-echo "Stop the stack with ./stop-demo.sh"
+echo "Stop the stack with just down"

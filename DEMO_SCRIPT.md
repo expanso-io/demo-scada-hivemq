@@ -1,6 +1,6 @@
 # SCADA to HiveMQ demo script
 
-Run `./run-demo.sh` before recording. Start only after the command prints
+Run `just up` before recording. Start only after the command prints
 `Local acceptance passed` and the dashboard loads at
 <http://127.0.0.1:8888>.
 
@@ -48,5 +48,5 @@ Return to the topology.
 > TLS succeeds and an anonymous HiveMQ connection fails. Production uses the
 > same job through Expanso Cloud on labeled edge nodes.
 
-After recording, run `./stop-demo.sh` and confirm ports `8883` and `8888` are no
+After recording, run `just down` and confirm ports `8883` and `8888` are no
 longer listening.
