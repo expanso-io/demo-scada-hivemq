@@ -7,7 +7,8 @@ validate:
 
 static-check: validate
   docker compose config --quiet
-  xmllint --noout hivemq/config.xml hivemq/extension-config.xml
+  uv run -s scripts/validate_xml.py \
+    hivemq/config.xml hivemq/extension-config.xml
   shellcheck run-demo.sh stop-demo.sh scripts/*.sh
   uv run scripts/check_fixtures.py
   uv run --with grpcio-tools==1.71.0 \

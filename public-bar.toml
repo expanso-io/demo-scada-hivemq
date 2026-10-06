@@ -163,7 +163,7 @@ service = "secured-runtime"
 probe_command = ["uv", "run", "scripts/probe_runtime.py"]
 validators = [
   [
-    "xmllint", "--noout", "hivemq/config.xml",
+    "uv", "run", "-s", "scripts/validate_xml.py", "hivemq/config.xml",
     "hivemq/extension-config.xml",
   ],
   [
