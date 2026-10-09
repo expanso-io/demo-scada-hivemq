@@ -3,6 +3,8 @@ set -euo pipefail
 
 repo_dir=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 cd "$repo_dir"
+source "$repo_dir/scripts/port-env.sh"
+demo_ports_load "$repo_dir" --allow-bound
 
 command -v docker >/dev/null 2>&1 || {
   echo "docker is required" >&2
@@ -37,7 +39,7 @@ echo "Waiting for the localhost dashboard..."
 dashboard_ready=false
 for _ in $(seq 1 60); do
   if curl --fail --silent --show-error \
-    http://127.0.0.1:8888/ >/dev/null 2>&1; then
+    "http://127.0.0.1:${DASHBOARD_PORT}/" >/dev/null 2>&1; then
     dashboard_ready=true
     break
   fi
@@ -70,5 +72,5 @@ uv run scripts/probe_runtime.py
 
 echo
 echo "Local acceptance passed."
-echo "Dashboard: http://127.0.0.1:8888"
+echo "Dashboard: http://127.0.0.1:${DASHBOARD_PORT}"
 echo "Stop the stack with just down"

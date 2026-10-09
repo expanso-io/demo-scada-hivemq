@@ -34,3 +34,5 @@ venv/
 
 # public-bar reports
 artifacts/
+
+.demo-port-state.json*

@@ -160,3 +160,7 @@ and its dashboard references. The current stack publishes Sparkplug B directly
 from the in-repository OPC UA simulator, so the pipeline runs without a trial
 gateway. The files under `ignition-edge/provisioning/` remain as optional
 mapping references; Compose does not claim to provision or run Ignition.
+
+Local ports are declared in `ports.json`. `just ports` shows the stable
+assignments. `just down` retains them, so the next `just up` reuses the URL.
+An occupied assigned port fails startup without silently changing the URL.
