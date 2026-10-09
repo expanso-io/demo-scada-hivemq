@@ -241,7 +241,7 @@ services:
       - ./fixtures:/usr/share/nginx/html/fixtures:ro
       - ./pipelines:/usr/share/nginx/html/pipelines:ro
     ports:
-      - "${DASHBOARD_PORT}:8080"
+      - "127.0.0.1:${DASHBOARD_PORT}:8080"
     read_only: true
     tmpfs:
       - /var/cache/nginx:size=16m,mode=1777
