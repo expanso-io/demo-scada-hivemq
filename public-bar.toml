@@ -140,7 +140,7 @@ output = "fixtures/stages.json"
 [[services]]
 id = "secured-runtime"
 command = ["./run-demo.sh"]
-ready_url = "http://127.0.0.1:8888/"
+ready_url = "http://127.0.0.1:27800/"
 stop_command = ["./stop-demo.sh"]
 
 [[platforms]]

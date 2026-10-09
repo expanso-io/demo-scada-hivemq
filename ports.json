@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "demo": "demo-scada-hivemq",
+  "ports": {
+    "DASHBOARD_PORT": 27800,
+    "MQTT_TLS_PORT": 27801
+  }
+}

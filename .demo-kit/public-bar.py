@@ -6,6 +6,7 @@
 #   "jsonschema>=4.23,<5",
 #   "playwright==1.55.0",
 #   "pyyaml>=6,<7",
+#   "rust-just==1.56.0",
 # ]
 # ///
 """Enforce the public example bar and write durable Markdown/JSON evidence.
@@ -16,7 +17,8 @@
       --report artifacts/public-bar.md
 
 The static lane validates the manifest, pipeline fixtures, platform claims,
-published structure, browser declarations, and retained-feature baseline. The
+published structure and `just up` / `just down` lifecycle, browser declarations,
+and retained-feature baseline. The
 browser lane is added to the same command by ``--lane all`` or run on its own
 with ``--lane browser``. Every invocation writes its report, including failed
 and incomplete runs.
@@ -32,6 +34,7 @@ import importlib.metadata
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -41,6 +44,7 @@ import tempfile
 import time
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -51,7 +55,7 @@ from bs4 import BeautifulSoup
 from jsonschema import Draft202012Validator
 
 
-PUBLIC_BAR_VERSION = "1.1.3"
+PUBLIC_BAR_VERSION = "1.3.1"
 CRITERIA = {
     1: "Runs",
     2: "Platform",
@@ -91,6 +95,87 @@ PLACEHOLDER = re.compile(
     re.I,
 )
 IMAGE = re.compile(r"^([^\s@]+)(?::([^\s@/]+))?(?:@sha256:[0-9a-f]{64})?$")
+JUSTFILE_NAMES = {"justfile", ".justfile"}
+LIFECYCLE_RECIPES = ("up", "down")
+# A README command that runs one of these scripts directly is a raw launcher:
+# start and stop go through `just up` and `just down` instead.
+SCRIPT_SUFFIXES = (".sh", ".bash", ".py", ".js", ".mjs", ".ts")
+SCRIPT_WRAPPERS = {"bash", "sh", "zsh", "env", "exec", "nohup", "sudo", "time"}
+SCRIPT_INTERPRETERS = {"python", "python3", "node", "deno", "bun"}
+UV_VALUE_OPTIONS = {
+    "--with",
+    "--python",
+    "-p",
+    "--project",
+    "--directory",
+    "--extra",
+    "--group",
+    "--package",
+    "--env-file",
+    "--from",
+}
+LAUNCHER_STEM_WORDS = {
+    "run",
+    "start",
+    "stop",
+    "serve",
+    "server",
+    "up",
+    "down",
+    "launch",
+    "teardown",
+    "shutdown",
+    "restart",
+}
+LAUNCHER_ARG_WORDS = {"start", "stop", "serve", "up", "down", "restart", "teardown"}
+FENCE = re.compile(r"^\s*(```|~~~)")
+INLINE_CODE = re.compile(r"`([^`\n]+)`")
+SEMVER = r"(?<![\d.])v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?(?![\d.])"
+EXPANSO_VERSION_ASSIGNMENT = re.compile(
+    rf"\bEXPANSO(?:_(?:EDGE|CLI))?_VERSION\b\s*[:=]\s*['\"]?{SEMVER}",
+    re.I,
+)
+EXPANSO_PACKAGE_PIN = re.compile(
+    rf"\bexpanso-(?:edge|cli)\b\s*(?:==|===|~=|@|:)\s*{SEMVER}",
+    re.I,
+)
+EXPANSO_INSTALLER_PIN = re.compile(
+    rf"\b(?:install-(?:edge|cli)\.sh|get\.expanso\.io/(?:edge|cli))\b"
+    rf"[^\n]{{0,160}}?\s{SEMVER}(?:\s|$)",
+    re.I,
+)
+EXPANSO_INSTALL_GUIDANCE_PIN = re.compile(
+    rf"\b(?:install|run|use)\b[^\n]{{0,80}}?\bexpanso\b"
+    rf"[^\n]{{0,80}}?\b(?:edge|cli)\b[^\n]{{0,40}}?{SEMVER}",
+    re.I,
+)
+EXPANSO_LOCK_PIN = re.compile(
+    rf"\bname\s*=\s*['\"]expanso-(?:edge|cli)['\"]\s*\n"
+    rf"\s*version\s*=\s*['\"]{SEMVER}['\"]",
+    re.I,
+)
+EXPANSO_BINARY_NAME = re.compile(r"^expanso-(?:edge|cli)(?:\.exe)?$", re.I)
+EXPANSO_CLOUD_DEPLOY = re.compile(
+    r"\bexpanso-cli\b[\s\S]{0,200}?\bjob\b[\s\S]{0,80}?\b(?:deploy|update)\b",
+    re.I,
+)
+EXPANSO_CLOUD_HELPER_DEPLOY = re.compile(
+    r"\b[A-Za-z_]\w*\s*\(\s*['\"]job['\"]\s*,\s*"
+    r"['\"](?:deploy|update)['\"]",
+    re.I,
+)
+LOCAL_EDGE_RUN = re.compile(
+    r"\bexpanso-edge\b[^\n]{0,120}?\brun\b[^\n]{0,120}?--local\b",
+    re.I,
+)
+JUST_CLOUD_START = re.compile(
+    r"\bjust\s+(?:up\s+cloud\b|up[-_]cloud\b|cloud[-_]up\b|"
+    r"start[-_]cloud\b|cloud[-_]start\b)",
+    re.I,
+)
+SCRIPT_PATH = re.compile(
+    r"(?<![\w.-])(?:\./)?[\w./-]+\.(?:sh|bash|py|js|mjs|ts)(?![\w.-])"
+)
 
 
 @dataclass
@@ -195,6 +280,95 @@ def tracked_files(repo: Path) -> list[Path]:
     ]
 
 
+def text_contents(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def is_bundled_expanso_binary(path: Path) -> bool:
+    if not EXPANSO_BINARY_NAME.fullmatch(path.name):
+        return False
+    try:
+        header = path.read_bytes()[:8192]
+    except OSError:
+        return False
+    binary_magics = (
+        b"\x7fELF",
+        b"MZ",
+        b"\xcf\xfa\xed\xfe",
+        b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf",
+        b"\xfe\xed\xfa\xce",
+        b"\xca\xfe\xba\xbe",
+    )
+    return header.startswith(binary_magics) or b"\0" in header
+
+
+def is_recorded_expanso_evidence(path: Path, repo: Path) -> bool:
+    parts = tuple(part.lower() for part in path.relative_to(repo).parts)
+    if not parts or parts[0] != "docs":
+        return False
+    return any(part in {"proof", "evidence", "verification"} for part in parts[1:]) or (
+        "proof" in parts[-1] or "report" in parts[-1]
+    )
+
+
+def expanso_version_pin_lines(path: Path, repo: Path, text: str) -> list[int]:
+    if is_recorded_expanso_evidence(path, repo):
+        return []
+    logical_text = re.sub(r"\\\s*\n\s*", " ", text)
+    patterns = (
+        EXPANSO_VERSION_ASSIGNMENT,
+        EXPANSO_PACKAGE_PIN,
+        EXPANSO_INSTALLER_PIN,
+        EXPANSO_INSTALL_GUIDANCE_PIN,
+    )
+    lines = [
+        number
+        for number, line in enumerate(logical_text.splitlines(), start=1)
+        if any(pattern.search(line) for pattern in patterns)
+    ]
+    if "lock" in path.name.lower():
+        lines.extend(
+            text.count("\n", 0, match.start()) + 1
+            for match in EXPANSO_LOCK_PIN.finditer(text)
+        )
+    return sorted(set(lines))
+
+
+def check_expanso_tool_policy(repo: Path, audit: Audit) -> None:
+    pins: list[str] = []
+    binaries: list[str] = []
+    for path in tracked_files(repo):
+        relative = path.relative_to(repo).as_posix()
+        if is_bundled_expanso_binary(path):
+            binaries.append(relative)
+            continue
+        text = text_contents(path)
+        if text is None:
+            continue
+        for number in expanso_version_pin_lines(path, repo, text):
+            pins.append(f"{relative}:{number}")
+    audit.add(
+        2,
+        "expanso-tool-versions",
+        not pins,
+        "tracked files install the latest Expanso Edge and CLI without a version pin"
+        if not pins
+        else "version-pinned Expanso tool install: " + ", ".join(pins),
+    )
+    audit.add(
+        2,
+        "expanso-tool-binaries",
+        not binaries,
+        "tracked files contain no bundled Expanso Edge or CLI binary"
+        if not binaries
+        else "bundled Expanso tool binary: " + ", ".join(binaries),
+    )
+
+
 def load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
@@ -238,7 +412,78 @@ def load_manifest(
             )
         return None
     audit.add(1, "manifest-schema", True, "public-bar.toml matches schema version 1")
-    return manifest
+    return resolve_manifest_urls(repo, manifest)
+
+
+def resolve_manifest_urls(repo: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    """Resolve only declared localhost URL ports; fixture-only ports stay literal."""
+    declaration = repo / "ports.json"
+    if not declaration.is_file():
+        return manifest
+    allocator = repo / "scripts" / "demo-ports.py"
+    if not allocator.is_file():
+        allocator = Path(__file__).with_name("demo-ports.py")
+    if not allocator.is_file():
+        raise ValueError("ports.json requires the vendored DemoKit allocator")
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--no-project",
+            str(allocator),
+            "resolve",
+            "--demo-dir",
+            str(repo),
+            "--allow-bound",
+            "--format",
+            "json",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assigned = json.loads(result.stdout)
+    declaration_data = load_json(declaration)
+    if declaration_data.get("version") == 1:
+        preferences = next(iter(declaration_data["demos"].values()))["ports"]
+    else:
+        preferences = declaration_data["ports"]
+    remap: dict[int, int] = {}
+    ambiguous: set[int] = set()
+    for name, preferred in preferences.items():
+        if preferred is None:
+            continue
+        if preferred in remap and remap[preferred] != assigned[name]:
+            ambiguous.add(preferred)
+        remap[preferred] = assigned[name]
+
+    def resolved(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: resolved(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [resolved(item) for item in value]
+        if not isinstance(value, str) or not value.startswith(("http://", "https://")):
+            return value
+        expanded = re.sub(
+            r"(?<=:)\$\{([A-Z][A-Z0-9_]*)\}(?=[/?#]|$)",
+            lambda match: str(assigned[match[1]]) if match[1] in assigned else match[0],
+            value,
+        )
+        url = urllib.parse.urlsplit(expanded)
+        if url.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            return value
+        if expanded != value:
+            return expanded
+        if url.port in ambiguous:
+            raise ValueError(f"ambiguous declared URL port: {url.port}")
+        port = remap.get(url.port)
+        if port is None:
+            return value
+        host = f"[{url.hostname}]" if url.hostname == "::1" else url.hostname
+        return urllib.parse.urlunsplit(url._replace(netloc=f"{host}:{port}"))
+
+    return resolved(manifest)
 
 
 def run_checked(
@@ -851,6 +1096,354 @@ def check_structure(repo: Path, manifest: dict[str, Any], audit: Audit) -> None:
         audit.add(3, "explorer-stages", False, "manifest declares no explorer stages")
 
 
+def just_binary() -> str | None:
+    found = shutil.which("just")
+    if found:
+        return found
+    # `uv run -s` installs the pinned rust-just wheel beside the interpreter.
+    sibling = Path(sys.executable).parent / "just"
+    return str(sibling) if sibling.is_file() else None
+
+
+def required_parameters(recipe: dict[str, Any]) -> list[str]:
+    return [
+        str(parameter.get("name"))
+        for parameter in recipe.get("parameters", [])
+        if parameter.get("default") is None and parameter.get("kind") != "star"
+    ]
+
+
+def all_parameters(recipe: dict[str, Any]) -> list[str]:
+    return [str(parameter.get("name")) for parameter in recipe.get("parameters", [])]
+
+
+def nested_strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [item for part in value for item in nested_strings(part)]
+    return []
+
+
+def recipe_source(recipes: dict[str, Any], start: str) -> str:
+    pending = [start]
+    seen: set[str] = set()
+    lines: list[str] = []
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        recipe = recipes.get(name)
+        if not isinstance(recipe, dict):
+            continue
+        body = "\n".join(nested_strings(recipe.get("body", [])))
+        lines.append(body)
+        for dependency in recipe.get("dependencies", []):
+            if isinstance(dependency, dict) and dependency.get("recipe"):
+                pending.append(str(dependency["recipe"]))
+        for called in re.findall(r"(?:^|[;&|]\s*)@?just\s+([\w.-]+)", body, re.M):
+            pending.append(called)
+    return "\n".join(lines)
+
+
+def reachable_start_source(repo: Path, recipes: dict[str, Any], start: str) -> str:
+    source = recipe_source(recipes, start)
+    pending = list(SCRIPT_PATH.findall(source))
+    seen: set[Path] = set()
+    while pending:
+        raw = pending.pop()
+        try:
+            path = safe_path(repo, raw.removeprefix("./"))
+        except ValueError:
+            continue
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
+        text = text_contents(path)
+        if text is None:
+            continue
+        source += "\n" + text
+        pending.extend(SCRIPT_PATH.findall(text))
+    return source
+
+
+def cloud_start_recipe(name: str) -> bool:
+    normalized = name.lower().replace("_", "-")
+    return normalized in {"up-cloud", "cloud-up", "start-cloud", "cloud-start"}
+
+
+def deploys_cloud_pipeline(source: str) -> bool:
+    direct = EXPANSO_CLOUD_DEPLOY.search(source)
+    helper = EXPANSO_CLOUD_HELPER_DEPLOY.search(source)
+    return bool(direct or (helper and re.search(r"\bexpanso-cli\b", source)))
+
+
+def check_justfile(repo: Path, audit: Audit) -> None:
+    justfiles = sorted(
+        path
+        for path in repo.iterdir()
+        if path.is_file() and path.name.lower() in JUSTFILE_NAMES
+    )
+    if not justfiles:
+        audit.add(
+            3,
+            "justfile",
+            False,
+            "no justfile at the repository root; add one with up and down recipes",
+        )
+        return
+    justfile = justfiles[0]
+    binary = just_binary()
+    if not binary:
+        audit.add(3, "justfile", False, "just is required to read the justfile")
+        return
+    result = subprocess.run(
+        [
+            binary,
+            "--justfile",
+            str(justfile),
+            "--working-directory",
+            str(repo),
+            "--dump",
+            "--dump-format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    try:
+        dump = json.loads(result.stdout) if result.returncode == 0 else None
+    except json.JSONDecodeError:
+        dump = None
+    if not isinstance(dump, dict):
+        error = (result.stderr or result.stdout).strip().splitlines()
+        audit.add(
+            3,
+            "justfile",
+            False,
+            f"just could not parse {justfile.name}: "
+            + (error[0] if error else f"exit {result.returncode}"),
+        )
+        return
+    audit.add(3, "justfile", True, f"{justfile.name} parsed by just")
+    recipes = dump.get("recipes") or {}
+    aliases = dump.get("aliases") or {}
+    up_target = "up"
+    if up_target not in recipes and up_target in aliases:
+        up_target = str(aliases[up_target].get("target", ""))
+    for name in LIFECYCLE_RECIPES:
+        target = name
+        if name not in recipes and name in aliases:
+            target = str(aliases[name].get("target", ""))
+        recipe = recipes.get(target)
+        if not isinstance(recipe, dict):
+            audit.add(
+                3,
+                f"just:{name}",
+                False,
+                f"justfile has no `{name}` recipe; `just {name}` must "
+                + ("start everything" if name == "up" else "stop and clean up"),
+            )
+            continue
+        required = required_parameters(recipe)
+        audit.add(
+            3,
+            f"just:{name}",
+            not required,
+            f"`just {name}` runs recipe {target}"
+            if not required
+            else f"`just {name}` needs arguments: " + ", ".join(required),
+        )
+        if name == "up":
+            parameters = all_parameters(recipe)
+            audit.add(
+                3,
+                "just:up-plain",
+                not parameters,
+                "`just up` takes no mode or target argument"
+                if not parameters
+                else "move alternate modes to separate recipes; `up` has parameters: "
+                + ", ".join(parameters),
+            )
+    cloud_variants = sorted(name for name in recipes if cloud_start_recipe(name))
+    audit.add(
+        3,
+        "just:cloud-start-name",
+        not cloud_variants,
+        "justfile has no Cloud-specific alternative to plain `just up`"
+        if not cloud_variants
+        else "replace Cloud start recipes with plain `up`: "
+        + ", ".join(cloud_variants),
+    )
+    cloud_commands = [
+        match.group(0)
+        for match in JUST_CLOUD_START.finditer(justfile.read_text(encoding="utf-8"))
+    ]
+    audit.add(
+        3,
+        "just:cloud-start-command",
+        not cloud_commands,
+        "justfile invokes no Cloud-specific alternative to plain `just up`"
+        if not cloud_commands
+        else "replace Cloud start commands with plain `just up`: "
+        + ", ".join(cloud_commands),
+    )
+    up_source = reachable_start_source(repo, recipes, up_target)
+    cloud_deploy = deploys_cloud_pipeline(up_source)
+    audit.add(
+        3,
+        "just:up-cloud-deploy",
+        cloud_deploy,
+        "plain `just up` reaches `expanso-cli job deploy` or `job update`"
+        if cloud_deploy
+        else "plain `just up` does not deploy or update an Expanso Cloud pipeline",
+    )
+    local_edge = bool(LOCAL_EDGE_RUN.search(up_source))
+    audit.add(
+        3,
+        "just:up-cloud-mode",
+        not local_edge,
+        "plain `just up` does not select the local Edge runtime"
+        if not local_edge
+        else "move the offline/local Edge mode to a separately named recipe",
+    )
+
+
+def readme_code(text: str) -> Iterable[tuple[int, str, bool]]:
+    """Yield (line number, code, fenced) for fenced lines and inline code."""
+    fenced = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            yield number, line, True
+        else:
+            for match in INLINE_CODE.finditer(line):
+                yield number, match.group(1), False
+
+
+def code_commands(code: str) -> Iterable[list[str]]:
+    for segment in re.split(r"&&|\|\||[;|]", code):
+        segment = re.sub(r"^\s*[$>]\s+", "", segment)
+        try:
+            words = shlex.split(segment, comments=True)
+        except ValueError:
+            words = segment.split()
+        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+            words = words[1:]
+        if words:
+            yield words
+
+
+def launched_script(words: list[str]) -> tuple[str, list[str]] | None:
+    """Return the script path and its arguments when a command runs one."""
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word in SCRIPT_WRAPPERS or word in SCRIPT_INTERPRETERS:
+            index += 1
+        elif word in {"uv", "uvx"}:
+            index += 2 if index + 1 < len(words) and words[index + 1] == "run" else 1
+            while index < len(words) and words[index].startswith("-"):
+                index += 2 if words[index] in UV_VALUE_OPTIONS else 1
+        elif word.startswith("-"):
+            index += 1
+        else:
+            break
+    if index >= len(words):
+        return None
+    target = words[index]
+    if target.startswith(".demo-kit/") or "://" in target:
+        return None
+    is_path = (
+        target.startswith(("./", "../", "scripts/"))
+        or "/scripts/" in target
+        or target.endswith(SCRIPT_SUFFIXES)
+    )
+    return (target, words[index + 1 :]) if is_path else None
+
+
+def is_lifecycle_launcher(script: str, arguments: list[str]) -> bool:
+    # A harness under tests/ runs checks, not the demo.
+    if {"tests", "test"} & set(Path(script).parts[:-1]):
+        return False
+    stem = Path(script).name
+    for suffix in SCRIPT_SUFFIXES:
+        stem = stem.removesuffix(suffix)
+    stem_words = set(re.split(r"[-_.]+", stem.lower()))
+    argument_words = {argument.lower() for argument in arguments}
+    return bool(stem_words & LAUNCHER_STEM_WORDS or argument_words & LAUNCHER_ARG_WORDS)
+
+
+def check_readme_lifecycle(repo: Path, audit: Audit) -> None:
+    readmes = sorted(
+        path
+        for path in repo.iterdir()
+        if path.is_file() and path.name.lower() == "readme.md"
+    )
+    if not readmes:
+        audit.add(3, "readme:just", False, "no README.md at the repository root")
+        return
+    readme = readmes[0]
+    shown: set[str] = set()
+    launchers: list[str] = []
+    cloud_variants: list[str] = []
+    for number, code, fenced in readme_code(readme.read_text(encoding="utf-8")):
+        for words in code_commands(code):
+            if words[0] == "just" and len(words) > 1:
+                shown.add(words[1])
+                if (
+                    cloud_start_recipe(words[1])
+                    or (words[1] == "up" and len(words) > 2)
+                ):
+                    cloud_variants.append(
+                        f"{readme.name}:{number} `{' '.join(words)}`"
+                    )
+            # A lone inline path such as `scripts/serve.py` names a file; it
+            # is a command only when written to run, as in `./scripts/serve.py`.
+            if (
+                not fenced
+                and len(words) == 1
+                and not words[0].startswith(("./", "../"))
+            ):
+                continue
+            launched = launched_script(words)
+            if launched and is_lifecycle_launcher(*launched):
+                launchers.append(f"{readme.name}:{number} `{' '.join(words)}`")
+    missing = [name for name in LIFECYCLE_RECIPES if name not in shown]
+    audit.add(
+        3,
+        "readme:just",
+        not missing,
+        f"{readme.name} starts with `just up` and stops with `just down`"
+        if not missing
+        else f"{readme.name} never shows "
+        + " or ".join(f"`just {name}`" for name in missing),
+    )
+    audit.add(
+        3,
+        "readme:raw-launcher",
+        not launchers,
+        f"{readme.name} shows no raw start or stop script"
+        if not launchers
+        else "start and stop with `just up` / `just down`, not "
+        + "; ".join(launchers[:5])
+        + (f" (+{len(launchers) - 5} more)" if len(launchers) > 5 else ""),
+    )
+    audit.add(
+        3,
+        "readme:cloud-start",
+        not cloud_variants,
+        f"{readme.name} uses plain `just up` as the Cloud start path"
+        if not cloud_variants
+        else "use plain `just up`, not " + ", ".join(cloud_variants),
+    )
+
+
 def check_browser_contract(manifest: dict[str, Any], audit: Audit) -> None:
     browser = manifest.get("browser", {})
     required = {
@@ -1129,7 +1722,10 @@ def static_lane(
         if services:
             stop_declared_services(repo, audit, 1, processes, services, ready_urls)
     check_platforms(repo, manifest, audit)
+    check_expanso_tool_policy(repo, audit)
     check_structure(repo, manifest, audit)
+    check_justfile(repo, audit)
+    check_readme_lifecycle(repo, audit)
     check_browser_contract(manifest, audit)
     check_ui_source(repo, audit)
     check_regressions(repo, manifest, feature_schema, audit, refs)
@@ -1658,8 +2254,10 @@ def browser_lane(repo: Path, manifest: dict[str, Any], audit: Audit) -> None:
 
 def teardown_only(repo: Path, manifest_path: Path) -> int:
     try:
-        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as error:
+        manifest = resolve_manifest_urls(
+            repo, tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(f"FAIL: cannot read teardown commands: {error}", file=sys.stderr)
         return 1
     failures: list[str] = []
@@ -1832,17 +2430,29 @@ def run_selftest(script_dir: Path) -> int:
     failures: list[str] = []
     with tempfile.TemporaryDirectory(prefix="public-bar-selftest-") as raw:
         temporary = Path(raw)
+        # fail/<n> and fail/<n>-<topic> each break exactly criterion n.
         cases: list[tuple[str, int | None, Path | None]] = [
             ("known-good", None, None),
             ("service-pipeline", None, service_overlay),
             *[
-                (f"criterion-{number}", number, bad_root / str(number))
-                for number in CRITERIA
+                (f"criterion-{overlay.name}", int(overlay.name.split("-")[0]), overlay)
+                for overlay in sorted(bad_root.iterdir())
+                if overlay.is_dir() and overlay.name.split("-")[0].isdigit()
             ],
         ]
         for case_name, expected_criterion, overlay in cases:
             repo = temporary / case_name
             initialize_selftest_repo(good, overlay, repo)
+            if overlay == service_overlay:
+                port = free_port()
+                manifest_path = repo / "public-bar.toml"
+                manifest_path.write_text(
+                    manifest_path.read_text().replace("4174", str(port))
+                )
+                pipeline_path = repo / "pipelines" / "normalize.yaml"
+                pipeline_path.write_text(
+                    pipeline_path.read_text().replace("4174", str(port))
+                )
             report = repo / "artifacts" / "public-bar.md"
             command = [
                 sys.executable,
@@ -1897,7 +2507,11 @@ def run_selftest(script_dir: Path) -> int:
                     )
                 elif case_name == "service-pipeline" and not (
                     (repo / "sidecar.stopped").is_file()
-                    and not url_reachable("http://127.0.0.1:4174/")
+                    and not url_reachable(
+                        tomllib.loads(
+                            (repo / "public-bar.toml").read_text(encoding="utf-8")
+                        )["services"][0]["ready_url"]
+                    )
                 ):
                     failures.append(
                         f"{case_name}: declared service was not stopped afterward"
@@ -1917,15 +2531,25 @@ def run_selftest(script_dir: Path) -> int:
                     f"failed={failed_criteria}"
                 )
             else:
+                names = sorted(
+                    {
+                        str(assertion["name"])
+                        for assertion in payload["assertions"]
+                        if not assertion["passed"]
+                    }
+                )
                 print(
-                    f"PASS criterion {expected_criterion} "
-                    f"{CRITERIA[expected_criterion]}: failed alone and was named"
+                    f"PASS {case_name} {CRITERIA[expected_criterion]}: "
+                    f"failed alone and was named ({', '.join(names)})"
                 )
     if failures:
         for failure in failures:
             print(f"FAIL selftest: {failure}", file=sys.stderr)
         return 1
-    print("ok: public-bar selftest (2 good, 5 criterion-isolated failures)")
+    print(
+        f"ok: public-bar selftest (2 good, {len(cases) - 2} "
+        "criterion-isolated failures)"
+    )
     return 0
 
 
@@ -1967,6 +2591,7 @@ def main() -> int:
         "expanso-edge": command_version(args.edge_binary, "version"),
         "expanso-cli": command_version(args.cli_binary, "version"),
         "playwright": importlib.metadata.version("playwright"),
+        "just": command_version(just_binary() or "just", "--version"),
         "python": sys.version.split()[0],
     }
     try:
