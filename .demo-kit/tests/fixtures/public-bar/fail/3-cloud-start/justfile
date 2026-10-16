@@ -1,8 +1,0 @@
-up-cloud:
-    @./scripts/cloud-up.sh
-
-up:
-    @echo "Start locally"
-
-down:
-    @echo down

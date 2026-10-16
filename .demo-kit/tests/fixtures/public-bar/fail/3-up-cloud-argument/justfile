@@ -1,5 +1,0 @@
-up mode="cloud":
-    @just up cloud
-
-down:
-    @echo down

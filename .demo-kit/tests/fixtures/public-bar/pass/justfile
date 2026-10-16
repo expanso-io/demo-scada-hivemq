@@ -1,5 +1,5 @@
 up:
-    @./scripts/cloud-up.sh
+    @echo up
 
 down:
     @echo down
